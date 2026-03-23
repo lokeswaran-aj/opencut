@@ -1,8 +1,3 @@
----
-title: Tech Stack
-description: All packages, versions, and configuration for the OpenCut monorepo
----
-
 # Tech Stack & Packages
 
 ## Package Versions

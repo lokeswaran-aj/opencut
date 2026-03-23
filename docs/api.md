@@ -1,8 +1,3 @@
----
-title: API Reference
-description: Complete API reference for all Next.js and render-worker routes
----
-
 # API Reference
 
 All Next.js API routes live under `apps/web/app/api/`. All render-worker routes live in `apps/render-worker/src/`.

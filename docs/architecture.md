@@ -1,8 +1,3 @@
----
-title: Architecture
-description: System architecture and data flow for OpenCut
----
-
 # Architecture
 
 ## Overview

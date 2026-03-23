@@ -1,8 +1,3 @@
----
-title: Database
-description: Drizzle ORM schema, ER diagram, and usage limit logic
----
-
 # Database
 
 ## Setup

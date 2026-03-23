@@ -1,8 +1,3 @@
----
-title: AI Agents & Tools
-description: AI tool definitions, Zod schemas, and streamText flow
----
-
 # AI Agents & Tools
 
 ## Overview
