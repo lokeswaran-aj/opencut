@@ -1,0 +1,590 @@
+# AI Agents & Tools
+
+## Overview
+
+There is a single `streamText` call per chat request, using Claude as the model. The LLM autonomously decides which tools to invoke based on the message content and conversation history. There is no explicit agent graph — the conversation history acts as memory, and tool descriptions enforce the routing logic.
+
+Two logical phases exist within this single call:
+- **Phase 1 — Research**: Firecrawl JS SDK tools wrapped as AI SDK tools
+- **Phase 2 — Video Production**: Custom AI SDK tools (ElevenLabs, Remotion config generation)
+
+A third phase handles iterative edits on follow-up messages.
+
+---
+
+## Models
+
+| Use case | Model |
+|---|---|
+| Research synthesis, script generation, complex reasoning | `claude-sonnet-4-6` |
+| Lightweight edits (`patch_scene`, `update_theme`, `reorder_scenes`) | `claude-haiku-4-5-20251001` |
+
+The `/api/chat` route inspects the incoming message to classify it as a "generation" or "edit" request and selects the appropriate model before calling `streamText`.
+
+---
+
+## Tool Invocation Flow
+
+### New project (first message)
+
+```
+User: "Make a TikTok video about Stripe's payment APIs"
+
+Claude calls:
+  1. research_topic
+      └─ internally calls firecrawl.search("Stripe payment APIs")
+      └─ internally calls firecrawl.scrape("https://stripe.com/docs/payments")
+      └─ internally calls firecrawl.extract(urls, schema)
+      └─ returns: ResearchReport { summary, keyFacts, sources }
+
+  2. generate_video_script(report, aspectRatio: "9:16")
+      └─ returns: VideoConfig skeleton (scenes with narration text, no audio yet)
+
+  3. generate_audio_segment(sceneId: "scene-0", narration: "...", voice: "auto")
+  4. generate_audio_segment(sceneId: "scene-1", narration: "...")
+  5. generate_audio_segment(sceneId: "scene-2", narration: "...")
+     ... (one call per scene, run sequentially so progress is visible)
+
+  6. generate_sound_effect(type: "intro_sting")
+  7. generate_sound_effect(type: "transition_whoosh")
+
+  8. save_video_config(VideoConfig with audio URLs populated)
+      └─ persists to DB, updates project status to "ready"
+      └─ returns: final VideoConfig
+
+Claude: "Here's your video about Stripe's APIs! I've created 5 scenes covering
+        their core payment flow, Stripe Elements, and webhooks. Preview is ready. 🎬"
+```
+
+### Follow-up edit (visual change only)
+
+```
+User: "Make the intro heading bigger and use a slide-up animation"
+
+Claude calls:
+  1. patch_scene(sceneId: "scene-0", changes: { headingSize: "xl", animation: "slideUp" })
+      └─ model: claude-haiku-4-5-20251001
+      └─ updates VideoConfig in DB
+      └─ returns: updated scene
+
+Claude: "Updated the intro — heading is now larger with a slide-up animation."
+```
+
+### Follow-up edit (narration change)
+
+```
+User: "Rewrite the narration for scene 2 to be more energetic"
+
+Claude calls:
+  1. regenerate_audio_segment(sceneId: "scene-2", newNarration: "...", voice: "same")
+      └─ calls ElevenLabs TTS with new text
+      └─ uploads new audio to R2, updates audio_files row
+      └─ updates VideoConfig audioTrack in DB
+      └─ returns: updated AudioSegment with new URL
+
+Claude: "Redone! Scene 2's narration now has more energy."
+```
+
+---
+
+## Tool Definitions
+
+### Phase 1 — Research Tools
+
+These wrap the Firecrawl JS SDK (`@mendable/firecrawl-js`). The LLM calls `research_topic` and the tool internally orchestrates Firecrawl calls based on whether the input is a URL or a topic string.
+
+---
+
+#### `research_topic`
+
+```typescript
+research_topic: tool({
+  description: `Research a topic or website to gather content for a video.
+    Call this ONLY for new projects or when the user explicitly asks to research something new.
+    Do NOT call this when editing an existing video.
+    Accepts either a URL (will scrape + extract) or a topic string (will search + scrape top results).
+    Returns a structured research report with key facts, quotes, and sources.`,
+  inputSchema: z.object({
+    input: z.string().describe("A URL (https://...) or a topic/keyword string"),
+    depth: z.enum(["quick", "deep"]).default("quick")
+      .describe("quick: search + scrape top 3 pages. deep: crawl + extract from up to 10 pages"),
+  }),
+  execute: async ({ input, depth }) => {
+    const isUrl = input.startsWith("http")
+    if (isUrl) {
+      const scraped = await firecrawl.scrapeUrl(input, { formats: ["markdown"] })
+      const extracted = await firecrawl.extract([input], {
+        prompt: "Extract key facts, statistics, product features, and notable quotes",
+        schema: researchFactsSchema,
+      })
+      return synthesizeReport([scraped], extracted)
+    } else {
+      const results = await firecrawl.search(input, {
+        limit: depth === "deep" ? 8 : 4,
+        scrapeOptions: { formats: ["markdown"], onlyMainContent: true },
+      })
+      return synthesizeReport(results)
+    }
+  },
+})
+```
+
+**Internally uses:**
+- `firecrawl.search(query, { limit, scrapeOptions })` — web search + scrape
+- `firecrawl.scrapeUrl(url, { formats: ["markdown"] })` — single page scrape
+- `firecrawl.extract(urls, { prompt, schema })` — structured data extraction
+- `firecrawl.crawlUrl(url, { limit: 10 })` — only on `depth: "deep"` for sites
+
+---
+
+### Phase 2 — Video Production Tools
+
+#### `generate_video_script`
+
+```typescript
+generate_video_script: tool({
+  description: `Generate a complete video script and structure from a research report.
+    Creates a VideoConfig with scenes, narration text, timing, and theme.
+    Picks the aspect ratio based on user intent (default 9:16 for TikTok/Reels).
+    Does NOT generate audio — that is done by generate_audio_segment.`,
+  inputSchema: z.object({
+    report: ResearchReportSchema,
+    aspectRatio: z.enum(["9:16", "16:9", "1:1", "4:5"]).default("9:16"),
+    videoStyle: z.enum(["educational", "promotional", "storytelling", "listicle"]).default("educational"),
+    durationSeconds: z.number().min(15).max(120).default(45),
+  }),
+  execute: async ({ report, aspectRatio, videoStyle, durationSeconds }) => {
+    // Uses streamObject internally to generate the structured VideoConfig
+    const { object } = await generateObject({
+      model: anthropic("claude-sonnet-4-6"),
+      schema: VideoConfigSchema,
+      prompt: buildScriptPrompt(report, aspectRatio, videoStyle, durationSeconds),
+    })
+    return object
+  },
+})
+```
+
+---
+
+#### `generate_audio_segment`
+
+```typescript
+generate_audio_segment: tool({
+  description: `Generate a narration audio clip for a single scene using ElevenLabs TTS.
+    Call this once per scene that has narration text.
+    Uploads the audio to R2 and returns the public URL and duration in frames.
+    Always call this AFTER generate_video_script has returned a VideoConfig.`,
+  inputSchema: z.object({
+    projectId: z.string().uuid(),
+    sceneId: z.string(),
+    narrationText: z.string().max(500),
+    voiceId: z.string().default("auto")
+      .describe("ElevenLabs voice ID. 'auto' selects based on video style."),
+  }),
+  execute: async ({ projectId, sceneId, narrationText, voiceId }) => {
+    const audio = await elevenlabs.generate({
+      voice: voiceId === "auto" ? DEFAULT_VOICE_ID : voiceId,
+      text: narrationText,
+      model_id: "eleven_multilingual_v2",
+    })
+    const r2Key = `audio/${projectId}/${sceneId}.mp3`
+    await uploadToR2(r2Key, audio)
+    const durationMs = await getAudioDuration(audio)
+    return {
+      sceneId,
+      url: `/api/audio/${encodeR2Key(r2Key)}`,   // proxied presigned URL
+      durationInFrames: Math.ceil((durationMs / 1000) * 30),
+      r2Key,
+    }
+  },
+})
+```
+
+---
+
+#### `generate_sound_effect`
+
+```typescript
+generate_sound_effect: tool({
+  description: `Generate a background sound effect or transition sound using ElevenLabs.
+    Use for: intro stings, transition whooshes, background ambience, outro music.
+    Optional — only call if the video would benefit from sound design.`,
+  inputSchema: z.object({
+    projectId: z.string().uuid(),
+    type: z.enum(["intro_sting", "transition_whoosh", "background_loop", "outro_music"]),
+    description: z.string().describe("Natural language description of the desired sound"),
+    durationSeconds: z.number().min(0.5).max(10).default(1),
+  }),
+  execute: async ({ projectId, type, description, durationSeconds }) => {
+    const sfx = await elevenlabs.generateSoundEffect({
+      text: description,
+      duration_seconds: durationSeconds,
+    })
+    const r2Key = `audio/${projectId}/sfx-${type}.mp3`
+    await uploadToR2(r2Key, sfx)
+    return { type, url: `/api/audio/${encodeR2Key(r2Key)}`, r2Key }
+  },
+})
+```
+
+---
+
+#### `save_video_config`
+
+```typescript
+save_video_config: tool({
+  description: `Persist the final VideoConfig to the database after all audio has been generated.
+    Call this once, as the last step of video generation, after ALL audio segments are ready.
+    Updates the project status to 'ready'.`,
+  inputSchema: z.object({
+    projectId: z.string().uuid(),
+    videoConfig: VideoConfigSchema,
+  }),
+  execute: async ({ projectId, videoConfig }) => {
+    await db.insert(videoConfigs).values({ projectId, config: videoConfig })
+    await db.update(projects).set({ status: "ready" }).where(eq(projects.id, projectId))
+    return { success: true, videoConfig }
+  },
+})
+```
+
+---
+
+### Phase 3 — Edit Tools
+
+These are called only on follow-up messages. The model used is `claude-haiku-4-5-20251001` for all edit tools.
+
+---
+
+#### `patch_scene`
+
+```typescript
+patch_scene: tool({
+  description: `Update visual or structural properties of an existing scene.
+    Use for: text changes, font size, colors, animation type, scene duration.
+    Do NOT use this to change narration text — use regenerate_audio_segment for that.
+    Returns the updated scene.`,
+  inputSchema: z.object({
+    projectId: z.string().uuid(),
+    sceneId: z.string(),
+    changes: z.object({
+      heading: z.string().optional(),
+      subtitle: z.string().optional(),
+      bullets: z.array(z.string()).optional(),
+      animation: z.enum(["fadeIn", "slideUp", "slideLeft", "zoomIn", "none"]).optional(),
+      durationInFrames: z.number().int().min(30).optional(),
+      theme: z.object({
+        primaryColor: z.string().optional(),
+        backgroundColor: z.string().optional(),
+        accentColor: z.string().optional(),
+      }).optional(),
+    }),
+  }),
+})
+```
+
+---
+
+#### `add_scene`
+
+```typescript
+add_scene: tool({
+  description: `Add a new scene to the video at a specified position.
+    After calling this, call generate_audio_segment if the new scene needs narration.`,
+  inputSchema: z.object({
+    projectId: z.string().uuid(),
+    position: z.number().int().describe("0-based index where to insert the scene"),
+    scene: SceneInputSchema,
+  }),
+})
+```
+
+---
+
+#### `remove_scene`
+
+```typescript
+remove_scene: tool({
+  description: `Remove a scene from the video by its ID. Also deletes its audio from R2.`,
+  inputSchema: z.object({
+    projectId: z.string().uuid(),
+    sceneId: z.string(),
+  }),
+})
+```
+
+---
+
+#### `reorder_scenes`
+
+```typescript
+reorder_scenes: tool({
+  description: `Change the order of scenes in the video.`,
+  inputSchema: z.object({
+    projectId: z.string().uuid(),
+    sceneIds: z.array(z.string()).describe("All scene IDs in the new desired order"),
+  }),
+})
+```
+
+---
+
+#### `regenerate_audio_segment`
+
+```typescript
+regenerate_audio_segment: tool({
+  description: `Regenerate the narration audio for a specific scene with new text or a different voice.
+    Only call this when the USER explicitly asks to change narration wording or voice style.
+    Replaces the existing audio file in R2.`,
+  inputSchema: z.object({
+    projectId: z.string().uuid(),
+    sceneId: z.string(),
+    newNarration: z.string().max(500),
+    voiceId: z.string().default("same").describe("'same' keeps the current voice"),
+  }),
+})
+```
+
+---
+
+#### `update_theme`
+
+```typescript
+update_theme: tool({
+  description: `Update the global color theme or font of the entire video.
+    Affects all scenes simultaneously.`,
+  inputSchema: z.object({
+    projectId: z.string().uuid(),
+    theme: z.object({
+      primaryColor: z.string().optional(),
+      backgroundColor: z.string().optional(),
+      accentColor: z.string().optional(),
+      fontFamily: z.enum(["Inter", "Roboto", "Poppins", "Montserrat", "Playfair Display"]).optional(),
+    }),
+  }),
+})
+```
+
+---
+
+## System Prompt
+
+The system prompt is built dynamically per request in `apps/web/lib/agents/system-prompt.ts`:
+
+```typescript
+export function buildSystemPrompt(project: Project, videoConfig: VideoConfig | null): string {
+  return `
+You are an AI video production assistant for a short-form social video generator.
+
+CURRENT PROJECT
+- ID: ${project.id}
+- Title: ${project.title}
+- Status: ${project.status}
+${videoConfig ? `
+CURRENT VIDEO CONFIG (${videoConfig.scenes.length} scenes, ${videoConfig.width}x${videoConfig.height})
+${JSON.stringify(videoConfig.scenes.map(s => ({ id: s.id, type: s.type, heading: 'heading' in s ? s.heading : undefined })), null, 2)}
+` : "- No video generated yet"}
+
+ROUTING RULES (follow strictly)
+1. If the user provides a topic, URL, or asks for a new video: call research_topic, then generate_video_script, then generate_audio_segment for EACH scene, then generate_sound_effect if appropriate, then save_video_config.
+2. If the user asks to change text, colors, animations, or layout of an existing scene: call patch_scene only. Do NOT call research_topic or generate_video_script.
+3. If the user asks to change narration wording or voice: call regenerate_audio_segment only.
+4. If the user asks to add a new scene: call add_scene, then generate_audio_segment if narration is needed.
+5. If the user asks to change the aspect ratio: call generate_video_script with the new aspectRatio (the research report is already in the DB, no need to re-research).
+
+AUDIO RULES
+- Always call generate_audio_segment separately for EACH scene — never batch them.
+- This gives the user live progress feedback as each scene's audio is generated.
+- Only call generate_sound_effect if the video would meaningfully benefit from it.
+
+OUTPUT STYLE
+- Be concise. After tool calls complete, summarize what was done in 1-2 sentences.
+- Reference specific scene names/numbers when relevant.
+- Never show raw JSON in your text response.
+`.trim()
+}
+```
+
+---
+
+## VideoConfig Schema (Zod)
+
+Defined in `packages/types/src/index.ts`. This is the central data model.
+
+```typescript
+const AspectRatioSchema = z.enum(["9:16", "16:9", "1:1", "4:5"])
+
+const AnimationSchema = z.enum(["fadeIn", "slideUp", "slideLeft", "zoomIn", "none"])
+
+const BaseSceneSchema = z.object({
+  id: z.string(),
+  startFrame: z.number().int(),
+  durationInFrames: z.number().int().min(30),
+  animation: AnimationSchema,
+  narration: z.string().optional(),
+})
+
+const SceneSchema = z.discriminatedUnion("type", [
+  BaseSceneSchema.extend({
+    type: z.literal("intro"),
+    heading: z.string(),
+    subtitle: z.string().optional(),
+  }),
+  BaseSceneSchema.extend({
+    type: z.literal("title"),
+    heading: z.string(),
+    subtitle: z.string().optional(),
+  }),
+  BaseSceneSchema.extend({
+    type: z.literal("bullets"),
+    heading: z.string(),
+    bullets: z.array(z.string()).min(2).max(5),
+  }),
+  BaseSceneSchema.extend({
+    type: z.literal("quote"),
+    text: z.string(),
+    author: z.string().optional(),
+    source: z.string().optional(),
+  }),
+  BaseSceneSchema.extend({
+    type: z.literal("stat"),
+    value: z.string(),
+    label: z.string(),
+    context: z.string().optional(),
+  }),
+  BaseSceneSchema.extend({
+    type: z.literal("outro"),
+    heading: z.string(),
+    ctaText: z.string().optional(),
+  }),
+])
+
+const AudioSegmentSchema = z.object({
+  id: z.string(),
+  sceneId: z.string(),
+  type: z.enum(["narration", "sound_effect"]),
+  url: z.string().url(),          // R2 URL (presigned or public)
+  startFrame: z.number().int(),
+  durationInFrames: z.number().int(),
+  volume: z.number().min(0).max(1).default(1),
+})
+
+export const VideoConfigSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  aspectRatio: AspectRatioSchema,
+  fps: z.literal(30),
+  durationInFrames: z.number().int(),
+  width: z.number().int(),
+  height: z.number().int(),
+  theme: z.object({
+    primaryColor: z.string(),      // hex
+    backgroundColor: z.string(),   // hex
+    accentColor: z.string(),       // hex
+    fontFamily: z.enum(["Inter", "Roboto", "Poppins", "Montserrat", "Playfair Display"]),
+  }),
+  scenes: z.array(SceneSchema),
+  audioTrack: z.object({
+    segments: z.array(AudioSegmentSchema),
+  }),
+})
+
+export type VideoConfig = z.infer<typeof VideoConfigSchema>
+export type Scene = z.infer<typeof SceneSchema>
+export type AudioSegment = z.infer<typeof AudioSegmentSchema>
+```
+
+---
+
+## Streaming Tool UI Components
+
+The chat panel is built with **Vercel AI Elements** — a shadcn-based registry of AI-native components. Components live in `src/components/ai-elements/` and are fully owned/customizable.
+
+### Chat Panel Structure
+
+```typescript
+'use client'
+import { useChat } from '@ai-sdk/react'
+import { Conversation, ConversationContent, ConversationEmptyState, ConversationScrollButton } from '@/components/ai-elements/conversation'
+import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message'
+import { PromptInput, PromptInputTextarea, PromptInputSubmit } from '@/components/ai-elements/prompt-input'
+import { Loader } from '@/components/ai-elements/loader'
+import { Sources, SourcesTrigger, SourcesContent, Source } from '@/components/ai-elements/sources'
+
+export function ChatPanel({ projectId }: { projectId: string }) {
+  const { messages, sendMessage, status } = useChat({ api: '/api/chat', body: { projectId } })
+
+  return (
+    <div className="flex flex-col h-full">
+      <Conversation className="flex-1">
+        <ConversationContent>
+          {messages.length === 0 && (
+            <ConversationEmptyState
+              title="What should we make a video about?"
+              description="Paste a URL or describe a topic"
+            />
+          )}
+          {messages.map((message) => (
+            <Message from={message.role} key={message.id}>
+              <MessageContent>
+                {message.parts.map((part, i) => {
+                  switch (part.type) {
+                    case 'text':
+                      return <MessageResponse key={i}>{part.text}</MessageResponse>
+
+                    // Tool invocation cards — custom components per tool
+                    case 'tool-research_topic':
+                      return <ResearchCard key={i} part={part} />
+                    case 'tool-generate_video_script':
+                      return <ScriptCard key={i} part={part} />
+                    case 'tool-generate_audio_segment':
+                      return <AudioCard key={i} part={part} />
+                    case 'tool-generate_sound_effect':
+                      return <SfxCard key={i} part={part} />
+                    case 'tool-save_video_config':
+                      return <PreviewReadyCard key={i} part={part} />
+                    case 'tool-patch_scene':
+                    case 'tool-update_theme':
+                    case 'tool-reorder_scenes':
+                      return <EditCard key={i} part={part} />
+                    case 'tool-regenerate_audio_segment':
+                      return <AudioCard key={i} part={part} />
+
+                    default:
+                      return null
+                  }
+                })}
+              </MessageContent>
+            </Message>
+          ))}
+          {status === 'submitted' && <Loader />}
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
+
+      <PromptInput onSubmit={(m) => sendMessage({ text: m.text })}>
+        <PromptInputTextarea placeholder="Describe a topic or paste a URL..." />
+        <PromptInputSubmit status={status === 'streaming' ? 'streaming' : 'ready'} />
+      </PromptInput>
+    </div>
+  )
+}
+```
+
+### Tool Card Components
+
+Custom shadcn cards rendered from `message.parts` when `part.type` starts with `"tool-"`. Each card reads `part.status` (`"running"` | `"complete"`) to show loading vs. done state.
+
+| Part type | Card component | While `running` | When `complete` |
+|---|---|---|---|
+| `tool-research_topic` | `<ResearchCard>` | Animated search bar + live URL being scraped | Firecrawl `<Sources>` component with source links + summary |
+| `tool-generate_video_script` | `<ScriptCard>` | Scene list building up live | Scene type chips with durations |
+| `tool-generate_audio_segment` | `<AudioCard>` | Waveform animation + scene name | Play button + duration label |
+| `tool-generate_sound_effect` | `<SfxCard>` | Waveform animation | Sound effect type label |
+| `tool-save_video_config` | `<PreviewReadyCard>` | Saving spinner | "Preview ready ✓" — triggers Player update |
+| `tool-patch_scene` | `<EditCard>` | Subtle spinner | "Scene updated ✓" |
+| `tool-update_theme` | `<EditCard>` | Color swatch preview | Theme applied ✓ |
+| `tool-regenerate_audio_segment` | `<AudioCard>` | Waveform animation | New play button + duration |
+
+The `<Sources>` component from AI Elements is used directly inside `<ResearchCard>` to render Firecrawl source URLs in a collapsible list — no custom implementation needed.
