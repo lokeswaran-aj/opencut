@@ -26,9 +26,8 @@ export default function HomePage() {
           <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight whitespace-nowrap">
             What do you want to create today?
           </h1>
-          <p className="text-muted-foreground text-base leading-relaxed max-w-md mx-auto">
+          <p className="text-muted-foreground text-base leading-relaxed max-w-sm mx-auto">
             Describe a topic or paste a URL. Opencut researches, scripts,
-            <br />
             narrates and produces a fully-edited video — in under a minute.
           </p>
         </div>

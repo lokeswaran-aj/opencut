@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { UserButton } from "@clerk/nextjs"
 import { toast } from "sonner"
@@ -61,10 +62,18 @@ export default function DashboardPage() {
   useEffect(() => {
     const controller = new AbortController()
     fetch("/api/projects", { signal: controller.signal })
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}))
+          throw new Error((body as { error?: string }).error ?? `HTTP ${r.status}`)
+        }
+        return r.json()
+      })
       .then(setProjects)
       .catch((err) => {
-        if (err.name !== "AbortError") console.error(err)
+        if (err.name === "AbortError") return
+        console.error("[dashboard]", err)
+        toast.error("Failed to load projects", { description: err.message })
       })
       .finally(() => setLoading(false))
     return () => controller.abort()
@@ -107,7 +116,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-neutral-950 text-white">
       <header className="border-b border-neutral-800 px-6 py-4">
         <div className="mx-auto max-w-5xl flex items-center justify-between">
-          <span className="text-lg font-bold tracking-tight">opencut</span>
+          <Link href="/" className="text-lg font-bold tracking-tight hover:opacity-80 transition-opacity">opencut</Link>
           <div className="flex items-center gap-3">
             <Button
               onClick={() => setShowNew(true)}

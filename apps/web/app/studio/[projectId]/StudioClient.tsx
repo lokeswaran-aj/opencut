@@ -2,6 +2,7 @@
 
 import { useChat } from "@ai-sdk/react"
 import { useState, useEffect, useRef } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { DefaultChatTransport } from "ai"
 import type { UIMessage } from "ai"
@@ -103,9 +104,9 @@ export function StudioClient({
     <div className="flex h-screen flex-col bg-neutral-950 text-white overflow-hidden">
       <header className="flex items-center justify-between border-b border-neutral-800 px-6 py-3 shrink-0">
         <div className="flex items-center gap-3">
-          <span className="text-base font-bold tracking-tight text-white">
+          <Link href="/" className="text-base font-bold tracking-tight text-white hover:opacity-80 transition-opacity">
             opencut
-          </span>
+          </Link>
           <span className="text-neutral-600">/</span>
           <span className="text-sm text-neutral-300 truncate max-w-xs">
             {project.title}

@@ -13,13 +13,18 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const rows = await db
-    .select()
-    .from(projects)
-    .where(eq(projects.userId, userId))
-    .orderBy(desc(projects.createdAt))
+  try {
+    const rows = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.userId, userId))
+      .orderBy(desc(projects.createdAt))
 
-  return NextResponse.json(rows)
+    return NextResponse.json(rows)
+  } catch (err) {
+    console.error("[GET /api/projects]", err)
+    return NextResponse.json({ error: "Failed to fetch projects" }, { status: 500 })
+  }
 }
 
 export async function POST(req: Request) {
@@ -30,31 +35,36 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  if (!(await canCreateProject(userId))) {
-    return NextResponse.json(
-      { error: "Project limit reached. Free tier allows up to 5 projects." },
-      { status: 429 }
-    )
+  try {
+    if (!(await canCreateProject(userId))) {
+      return NextResponse.json(
+        { error: "Project limit reached. Free tier allows up to 5 projects." },
+        { status: 429 }
+      )
+    }
+
+    const body = await req.json() as {
+      title?: string
+      topic?: string
+      sourceUrl?: string
+      aspectRatio?: string
+    }
+
+    const [project] = await db
+      .insert(projects)
+      .values({
+        userId,
+        title: body.title ?? "Untitled Video",
+        topic: body.topic,
+        sourceUrl: body.sourceUrl,
+        aspectRatio: (body.aspectRatio as "9:16" | "16:9" | "1:1" | "4:5") ?? "9:16",
+        status: "draft",
+      })
+      .returning()
+
+    return NextResponse.json(project, { status: 201 })
+  } catch (err) {
+    console.error("[POST /api/projects]", err)
+    return NextResponse.json({ error: "Failed to create project" }, { status: 500 })
   }
-
-  const body = await req.json() as {
-    title?: string
-    topic?: string
-    sourceUrl?: string
-    aspectRatio?: string
-  }
-
-  const [project] = await db
-    .insert(projects)
-    .values({
-      userId,
-      title: body.title ?? "Untitled Video",
-      topic: body.topic,
-      sourceUrl: body.sourceUrl,
-      aspectRatio: (body.aspectRatio as "9:16" | "16:9" | "1:1" | "4:5") ?? "9:16",
-      status: "draft",
-    })
-    .returning()
-
-  return NextResponse.json(project, { status: 201 })
 }
