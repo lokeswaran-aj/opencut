@@ -1,3 +1,8 @@
+---
+title: AI Agents & Tools
+description: AI tool definitions, Zod schemas, and streamText flow
+---
+
 # AI Agents & Tools
 
 ## Overview
@@ -16,8 +21,8 @@ A third phase handles iterative edits on follow-up messages.
 
 | Use case | Model |
 |---|---|
-| Research synthesis, script generation, complex reasoning | `claude-sonnet-4-6` |
-| Lightweight edits (`patch_scene`, `update_theme`, `reorder_scenes`) | `claude-haiku-4-5-20251001` |
+| Research synthesis, script generation, complex reasoning | `claude-3-5-sonnet-20241022` |
+| Lightweight edits (`patch_scene`, `update_theme`, `reorder_scenes`) | `claude-3-5-haiku-20241022` |
 
 The `/api/chat` route inspects the incoming message to classify it as a "generation" or "edit" request and selects the appropriate model before calling `streamText`.
 
@@ -63,7 +68,7 @@ User: "Make the intro heading bigger and use a slide-up animation"
 
 Claude calls:
   1. patch_scene(sceneId: "scene-0", changes: { headingSize: "xl", animation: "slideUp" })
-      └─ model: claude-haiku-4-5-20251001
+      └─ model: claude-3-5-haiku-20241022
       └─ updates VideoConfig in DB
       └─ returns: updated scene
 
@@ -112,7 +117,7 @@ research_topic: tool({
   execute: async ({ input, depth }) => {
     const isUrl = input.startsWith("http")
     if (isUrl) {
-      const scraped = await firecrawl.scrapeUrl(input, { formats: ["markdown"] })
+      const scraped = await firecrawl.scrape(input, { formats: ["markdown"] })
       const extracted = await firecrawl.extract([input], {
         prompt: "Extract key facts, statistics, product features, and notable quotes",
         schema: researchFactsSchema,
@@ -131,7 +136,7 @@ research_topic: tool({
 
 **Internally uses:**
 - `firecrawl.search(query, { limit, scrapeOptions })` — web search + scrape
-- `firecrawl.scrapeUrl(url, { formats: ["markdown"] })` — single page scrape
+- `firecrawl.scrape(url, { formats: ["markdown"] })` — single page scrape
 - `firecrawl.extract(urls, { prompt, schema })` — structured data extraction
 - `firecrawl.crawlUrl(url, { limit: 10 })` — only on `depth: "deep"` for sites
 
@@ -156,7 +161,7 @@ generate_video_script: tool({
   execute: async ({ report, aspectRatio, videoStyle, durationSeconds }) => {
     // Uses streamObject internally to generate the structured VideoConfig
     const { object } = await generateObject({
-      model: anthropic("claude-sonnet-4-6"),
+      model: anthropic("claude-3-5-sonnet-20241022"),
       schema: VideoConfigSchema,
       prompt: buildScriptPrompt(report, aspectRatio, videoStyle, durationSeconds),
     })
@@ -253,7 +258,7 @@ save_video_config: tool({
 
 ### Phase 3 — Edit Tools
 
-These are called only on follow-up messages. The model used is `claude-haiku-4-5-20251001` for all edit tools.
+These are called only on follow-up messages. The model used is `claude-3-5-haiku-20241022` for all edit tools.
 
 ---
 

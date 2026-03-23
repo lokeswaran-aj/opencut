@@ -1,3 +1,8 @@
+---
+title: Tech Stack
+description: All packages, versions, and configuration for the OpenCut monorepo
+---
+
 # Tech Stack & Packages
 
 ## Package Versions
@@ -35,7 +40,7 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 
 ```json
 {
-  "name": "@opencut/types",
+  "name": "@repo/types",
   "dependencies": {
     "zod": "^3.24.0"
   }
@@ -50,14 +55,14 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 
 | Package | Version | Purpose |
 |---|---|---|
-| `next` | `^16.1.6` | App framework. App Router, async params, proxy.ts |
+| `next` | `^16.1.6` | App framework. App Router, async params, middleware.ts |
 | `react` | `^19.0.0` | UI |
 | `react-dom` | `^19.0.0` | DOM rendering |
 | `typescript` | `^5.8.0` | Type checking |
 
-**Next.js 16 breaking changes used in this project:**
+**Next.js 16 notes used in this project:**
 - `params` in route handlers and page components is now a `Promise` → always `await params`
-- `middleware.ts` renamed to `proxy.ts` (edge runtime no longer default)
+- `middleware.ts` lives at the project root alongside `app/` (not inside `src/`)
 - `PageProps<'/path/[param]'>` helper type for type-safe page props
 
 ---
@@ -66,20 +71,19 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 
 | Package | Version | Purpose |
 |---|---|---|
-| `ai` | `^6.0.0` | AI SDK v6 core — `streamText`, `generateObject`, `tool` |
-| `@ai-sdk/anthropic` | `^1.0.0` | Anthropic provider for AI SDK |
-| `@ai-sdk/react` | `^1.0.0` | `useChat` hook for streaming chat UI |
-| `@ai-sdk/mcp` | `^0.2.0` | MCP client (used if Firecrawl MCP needed in future) |
+| `ai` | `^6.0.134` | AI SDK v6 core — `streamText`, `generateObject`, `tool` |
+| `@ai-sdk/anthropic` | `^3.0.63` | Anthropic provider for AI SDK |
+| `@ai-sdk/react` | (via `ai`) | `useChat` hook for streaming chat UI — bundled with `ai` |
 
 **Models used:**
 
 | Model string | Used for |
 |---|---|
-| `anthropic("claude-sonnet-4-6")` | Research synthesis, script generation, complex tool routing |
-| `anthropic("claude-haiku-4-5-20251001")` | Lightweight edits: patch_scene, update_theme, reorder_scenes |
+| `anthropic("claude-3-5-sonnet-20241022")` | Research synthesis, script generation, complex tool routing |
+| `anthropic("claude-3-5-haiku-20241022")` | Lightweight edits: patch_scene, update_theme, reorder_scenes |
 
 **AI SDK v6 key changes from v4:**
-- Model identifiers: `anthropic("claude-sonnet-4-6")` — same pattern, new model names
+- Model identifiers: `anthropic("claude-3-5-sonnet-20241022")` — same pattern, new model names
 - `stopWhen: stepCountIs(N)` replaces `maxSteps`
 - `toUIMessageStreamResponse()` replaces `toDataStreamResponse()`
 - `message.parts` replaces `message.toolInvocations` for tool call rendering
@@ -90,7 +94,7 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 
 | Package | Version | Purpose |
 |---|---|---|
-| `@clerk/nextjs` | `^6.0.0` | Auth — prebuilt UI, server helpers, route protection |
+| `@clerk/nextjs | ^7.0.6` | Auth — prebuilt UI, server helpers, route protection |
 
 **Why Clerk over Better Auth:**
 - Zero DB tables for auth — Clerk manages users in their cloud
@@ -100,7 +104,7 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 - Saves significant setup time for a hackathon
 
 **Key integration points:**
-- `proxy.ts` — `clerkMiddleware()` protects `/dashboard` and `/studio/*`
+- `middleware.ts` — `clerkMiddleware()` protects `/dashboard` and `/studio/*`
 - `<ClerkProvider>` wraps root layout
 - `/sign-in` and `/sign-up` pages use Clerk's prebuilt components
 - `@clerk/elements` + shadcn for custom-styled auth forms if needed
@@ -121,8 +125,8 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 
 | Package | Version | Purpose |
 |---|---|---|
-| `remotion` | `4.0.399` | Core Remotion (frame rendering, `<Audio>`, `<AbsoluteFill>`) |
-| `@remotion/player` | `4.0.399` | `<Player>` component for in-browser preview |
+| `remotion` | `4.0.438` | Core Remotion (frame rendering, `<Audio>`, `<AbsoluteFill>`) |
+| `@remotion/player` | `4.0.438` | `<Player>` component for in-browser preview |
 
 > All Remotion packages must be pinned to the **exact same version**. Remove `^` prefix.
 
@@ -173,10 +177,10 @@ Custom tool invocation cards (`SearchCard`, `ScriptCard`, `AudioCard`, etc.) are
 
 | Package | Version | Purpose |
 |---|---|---|
-| `@aws-sdk/client-s3` | `^3.750.0` | Cloudflare R2 (S3-compatible) — upload audio + video |
-| `@aws-sdk/s3-request-presigner` | `^3.750.0` | Generate presigned URLs for audio serving |
-| `@mendable/firecrawl-js` | `^1.0.0` | Firecrawl SDK — search, scrape, extract, crawl |
-| `elevenlabs` | `^1.0.0` | ElevenLabs SDK — TTS + sound effects |
+| `@aws-sdk/client-s3` | `^3.1014.0` | Cloudflare R2 (S3-compatible) — upload audio + video |
+| `@aws-sdk/s3-request-presigner` | `^3.1014.0` | Generate presigned URLs for audio serving |
+| `@mendable/firecrawl-js` | `^4.16.0` | Firecrawl SDK — `search()`, `scrape()`, `extract()` |
+| `elevenlabs` | `^1.59.0` | ElevenLabs SDK — TTS (`textToSpeech.convert`) |
 
 ---
 
@@ -184,9 +188,9 @@ Custom tool invocation cards (`SearchCard`, `ScriptCard`, `AudioCard`, etc.) are
 
 | Package | Version | Purpose |
 |---|---|---|
-| `zod` | `^3.24.0` | Schema validation for tool inputs/outputs and VideoConfig |
+| `zod` | `^3.25.0` | Schema validation for tool inputs/outputs and VideoConfig |
 | `nanoid` | `^5.0.0` | Short unique IDs for scene IDs, audio segment IDs |
-| `@opencut/types` | `workspace:*` | Shared VideoConfig, Scene, AudioSegment types |
+| `@repo/types` | `workspace:*` | Shared VideoConfig, Scene, AudioSegment types |
 
 ---
 
@@ -211,13 +215,13 @@ Bun + Hono service. Handles final video export only.
 | Package | Version | Purpose |
 |---|---|---|
 | `hono` | `^4.0.0` | Web framework for Bun — request routing, SSE streaming |
-| `remotion` | `4.0.399` | Core (must match `apps/web`) |
-| `@remotion/bundler` | `4.0.399` | `bundle()` — webpack bundle of Remotion compositions |
-| `@remotion/renderer` | `4.0.399` | `renderMedia()` — Chromium + FFmpeg render pipeline |
+| `remotion` | `4.0.438` | Core (must match `apps/web`) |
+| `@remotion/bundler` | `4.0.438` | `bundle()` — webpack bundle of Remotion compositions |
+| `@remotion/renderer` | `4.0.438` | `renderMedia()` — Chromium + FFmpeg render pipeline |
 | `@aws-sdk/client-s3` | `^3.750.0` | Upload final `.mp4` to R2 |
 | `drizzle-orm` | `^0.44.0` | Update `render_jobs` status in Postgres |
 | `postgres` | `^3.4.5` | Postgres driver |
-| `@opencut/types` | `workspace:*` | Shared VideoConfig type |
+| `@repo/types` | `workspace:*` | Shared VideoConfig type |
 
 ---
 
@@ -350,7 +354,7 @@ PORT=3001
 /api/usage                     GET — videosGenerated / maxVideos for current user
 ```
 
-`proxy.ts` (Next.js 16) protects `/dashboard` and `/studio/*` via `clerkMiddleware`. All `/api/*` routes verify `userId` via `auth()` inside the handler.
+`middleware.ts` (Next.js 16) protects `/dashboard` and `/studio/*` via `clerkMiddleware`. All `/api/*` routes verify `userId` via `auth()` inside the handler.
 
 ---
 

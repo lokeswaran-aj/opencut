@@ -1,3 +1,8 @@
+---
+title: API Reference
+description: Complete API reference for all Next.js and render-worker routes
+---
+
 # API Reference
 
 All Next.js API routes live under `apps/web/app/api/`. All render-worker routes live in `apps/render-worker/src/`.
@@ -43,7 +48,7 @@ The stream emits:
 - Conversation history is loaded from `chat_messages` table on each request.
 - Current `VideoConfig` is injected into the system prompt so the LLM can reference existing scenes without re-generating everything.
 - Firecrawl MCP client is initialized per-request and closed in `onFinish`.
-- The `claude-sonnet-4-6` model handles all reasoning. `claude-haiku-4-5-20251001` is used only for `patch_scene` and `update_theme` (lightweight structured edits).
+- The `claude-3-5-sonnet-20241022` model handles all reasoning. `claude-3-5-haiku-20241022` is used only for `patch_scene` and `update_theme` (lightweight structured edits).
 
 ---
 
@@ -219,7 +224,7 @@ Clerk handles all authentication. There is no `/api/auth` route in this app. Cle
 
 | Layer | How |
 |---|---|
-| Route protection | `proxy.ts` — `clerkMiddleware()` + `createRouteMatcher(['/dashboard(.*)', '/studio(.*)'])` |
+| Route protection | `middleware.ts` — `clerkMiddleware()` + `createRouteMatcher(['/dashboard(.*)', '/studio(.*)'])` |
 | Server components / route handlers | `const { userId } = await auth()` from `@clerk/nextjs/server` |
 | Client components | `const { user } = useUser()` from `@clerk/nextjs` |
 | Sign-in page | `/sign-in` — renders Clerk `<SignIn />` component |
@@ -228,7 +233,7 @@ Clerk handles all authentication. There is no `/api/auth` route in this app. Cle
 
 Google OAuth is configured entirely inside the Clerk dashboard — no client ID/secret needed in app environment variables.
 
-`proxy.ts` (Next.js 16 replaces `middleware.ts`):
+`middleware.ts` (Next.js 16 replaces `middleware.ts`):
 
 ```typescript
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"

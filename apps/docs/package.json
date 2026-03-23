@@ -12,9 +12,14 @@
   },
   "dependencies": {
     "@repo/ui": "workspace:*",
+    "@types/mdx": "^2.0.13",
+    "fumadocs-core": "^16.7.4",
+    "fumadocs-mdx": "^14.2.11",
+    "fumadocs-ui": "^16.7.4",
     "next": "16.2.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
