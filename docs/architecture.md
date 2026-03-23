@@ -31,10 +31,12 @@ Next.js 16 application with App Router. Handles:
 
 ### `apps/render-worker`
 
-Bun + Hono service running on port `3001`. Handles:
-- Remotion `bundle()` + `renderMedia()` — cannot run inside Next.js due to webpack conflict
-- SSE stream of render progress percentage back to the caller
+Bun + Hono service running on port `8787` (configurable via `PORT` env var). Handles:
+- Remotion `bundle()` + `renderMedia()` — must run outside Next.js to avoid webpack conflicts
+- Bundle is cached in-process after the first call for fast subsequent renders
+- Progress updates written directly to `render_jobs` table (polled by the browser via Next.js)
 - Upload of final `.mp4` to Cloudflare R2 on completion
+- Authentication via shared `RENDER_WORKER_SECRET` header
 
 ### `packages/types`
 

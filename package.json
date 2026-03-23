@@ -9,7 +9,9 @@
     "check-types": "turbo run check-types",
     "docker:start": "docker compose up -d",
     "docker:stop": "docker compose down",
-    "docker:clean": "docker compose down -v"
+    "docker:clean": "docker compose down -v",
+    "worker:dev": "pnpm --filter render-worker dev",
+    "worker:start": "pnpm --filter render-worker start"
   },
   "devDependencies": {
     "prettier": "^3.7.4",

@@ -1,8 +1,26 @@
 "use client"
 
+import { useState, useEffect, useCallback } from "react"
 import type { VideoConfig } from "@repo/types"
 import { VideoPlayer } from "./VideoPlayer"
 import { Button } from "@/components/ui/button"
+import { Download, Loader2, CheckCircle, XCircle } from "lucide-react"
+
+interface RenderJob {
+  id: string
+  status: string
+  progress: number
+  stage: string | null
+  outputUrl: string | null
+  error: string | null
+}
+
+type ExportState =
+  | { type: "idle" }
+  | { type: "requesting" }
+  | { type: "polling"; job: RenderJob }
+  | { type: "done"; outputUrl: string }
+  | { type: "error"; message: string }
 
 interface VideoPreviewPanelProps {
   config: VideoConfig | null
@@ -55,8 +73,9 @@ export function VideoPreviewPanel({
   projectId,
   isGenerating,
 }: VideoPreviewPanelProps) {
-  const aspectRatio = config?.aspectRatio ?? "9:16"
+  const [exportState, setExportState] = useState<ExportState>({ type: "idle" })
 
+  const aspectRatio = config?.aspectRatio ?? "9:16"
   const dimensionClass =
     aspectRatio === "9:16"
       ? "aspect-[9/16] h-[600px]"
@@ -65,6 +84,79 @@ export function VideoPreviewPanel({
         : aspectRatio === "1:1"
           ? "aspect-square h-[480px]"
           : "aspect-[4/5] h-[560px]"
+
+  // Poll for job status while rendering
+  const pollJob = useCallback(
+    async (jobId: string) => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/render-job`)
+        if (!res.ok) return
+        const job: RenderJob = await res.json()
+
+        if (job.status === "done" && job.outputUrl) {
+          setExportState({ type: "done", outputUrl: job.outputUrl })
+          return
+        }
+        if (job.status === "failed") {
+          setExportState({
+            type: "error",
+            message: job.error ?? "Render failed",
+          })
+          return
+        }
+        // Still in progress — update displayed job and schedule next poll
+        setExportState({ type: "polling", job })
+        setTimeout(() => pollJob(jobId), 2500)
+      } catch {
+        setTimeout(() => pollJob(jobId), 4000)
+      }
+    },
+    [projectId]
+  )
+
+  const handleExport = async () => {
+    setExportState({ type: "requesting" })
+    try {
+      const res = await fetch(`/api/projects/${projectId}/export`, {
+        method: "POST",
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setExportState({
+          type: "error",
+          message: (body as { error?: string }).error ?? "Failed to start export",
+        })
+        return
+      }
+      const job: RenderJob = await res.json()
+
+      if (job.status === "done" && job.outputUrl) {
+        setExportState({ type: "done", outputUrl: job.outputUrl })
+        return
+      }
+
+      setExportState({ type: "polling", job })
+      setTimeout(() => pollJob(job.id), 2500)
+    } catch {
+      setExportState({ type: "error", message: "Network error — please retry" })
+    }
+  }
+
+  // Reset export state when config changes (new video generated)
+  useEffect(() => {
+    setExportState({ type: "idle" })
+  }, [config?.id])
+
+  const isRendering =
+    exportState.type === "requesting" || exportState.type === "polling"
+  const progress =
+    exportState.type === "polling" ? exportState.job.progress : 0
+  const stage =
+    exportState.type === "polling"
+      ? exportState.job.stage
+      : exportState.type === "requesting"
+        ? "Starting…"
+        : null
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-neutral-925">
@@ -75,20 +167,64 @@ export function VideoPreviewPanel({
         <div className="flex items-center gap-2">
           {config && (
             <span className="text-xs text-neutral-500">
-              {aspectRatio} · {config.fps}fps
+              {aspectRatio} · {config.fps ?? 30}fps
             </span>
           )}
-          <Button
-            size="sm"
-            disabled={!config || isGenerating}
-            className="h-7 px-3 text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40"
-            onClick={() => {
-              // TODO: trigger render worker
-              alert(`Render job for project ${projectId} — coming in Step 8!`)
-            }}
-          >
-            Export
-          </Button>
+
+          {/* Export button — morphs based on state */}
+          {exportState.type === "done" ? (
+            <a
+              href={exportState.outputUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              download
+              className="inline-flex items-center gap-1.5 h-7 px-3 text-xs rounded-md font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+            >
+              <Download className="size-3" />
+              Download
+            </a>
+          ) : exportState.type === "error" ? (
+            <Button
+              size="sm"
+              onClick={() => setExportState({ type: "idle" })}
+              className="h-7 px-3 text-xs bg-red-600 hover:bg-red-500 text-white"
+              title={exportState.message}
+            >
+              <XCircle className="size-3 mr-1" />
+              Retry
+            </Button>
+          ) : isRendering ? (
+            <div className="flex items-center gap-2">
+              {progress > 0 && (
+                <div className="flex items-center gap-1.5 text-xs text-neutral-400">
+                  <div className="w-16 h-1 rounded-full bg-neutral-700 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-indigo-500 transition-all duration-500"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <span>{progress}%</span>
+                </div>
+              )}
+              <Button
+                size="sm"
+                disabled
+                className="h-7 px-3 text-xs bg-indigo-600 text-white opacity-80 cursor-not-allowed"
+              >
+                <Loader2 className="size-3 mr-1 animate-spin" />
+                {stage ?? "Rendering…"}
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              disabled={!config || isGenerating}
+              onClick={handleExport}
+              className="h-7 px-3 text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40"
+            >
+              Export
+            </Button>
+          )}
         </div>
       </div>
 

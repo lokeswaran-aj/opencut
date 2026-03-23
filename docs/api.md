@@ -149,47 +149,38 @@ Redirect to a short-lived Cloudflare R2 presigned URL for the audio file. Presig
 
 ---
 
-### `POST /api/render`
+### `POST /api/projects/[id]/export`
 
-Trigger an export render job. Creates a `render_jobs` row with status `queued`, then calls the render-worker's `POST /render` endpoint asynchronously.
+Trigger an export render job for a project. Creates a `render_jobs` row with status `queued`, calls the render-worker's `POST /render` endpoint (fire-and-forget), and returns immediately.
 
-**Request body**
+Returns the existing in-progress job if one is already running.
+
+**Response** — `202 Accepted` — the full `render_jobs` row.
+
 ```json
 {
-  "projectId": "uuid"
+  "id": "uuid",
+  "projectId": "uuid",
+  "status": "queued",
+  "progress": 0,
+  "stage": null,
+  "outputUrl": null,
+  "error": null,
+  "createdAt": "ISO8601"
 }
 ```
 
-**Response** — `202 Accepted`
-```json
-{
-  "jobId": "uuid"
-}
-```
+**Error** — `409 Conflict` if the project is still generating.
 
 ---
 
-### `GET /api/render/[jobId]/stream`
+### `GET /api/projects/[id]/render-job`
 
-SSE proxy that forwards the render-worker's progress stream to the browser. The browser connects to this once after receiving the `jobId` from `POST /api/render`.
+Poll the latest render job for a project. Used by `VideoPreviewPanel` on a 2.5 s interval.
 
-**Response** — `text/event-stream`
+**Response** — latest `render_jobs` row (same shape as above, with `outputUrl` populated when `status === "done"`).
 
-Events emitted:
-
-| Event | Data |
-|---|---|
-| `progress` | `{ "percent": 0–100, "stage": "bundling \| rendering \| uploading" }` |
-| `done` | `{ "outputUrl": "https://r2.../exports/..." }` |
-| `error` | `{ "message": "string" }` |
-
-**Example client usage**
-```typescript
-const es = new EventSource(`/api/render/${jobId}/stream`)
-es.addEventListener('progress', (e) => setProgress(JSON.parse(e.data).percent))
-es.addEventListener('done', (e) => setDownloadUrl(JSON.parse(e.data).outputUrl))
-es.addEventListener('error', () => es.close())
-```
+Returns `404` if no render job exists yet.
 
 ---
 
@@ -247,57 +238,60 @@ export const config = {
 
 ---
 
-## Render Worker Routes (Bun + Hono, port 3001)
+## Render Worker Routes (Bun + Hono, port 8787)
 
-Internal service — not exposed to the browser directly. Only called by Next.js.
+Internal service — not exposed to the browser directly. Called only by Next.js API routes.
+All endpoints require `x-render-secret` header matching `RENDER_WORKER_SECRET` env var.
+
+---
+
+### `GET /`
+
+Health check.
+
+**Response** — `200 OK`
+```json
+{ "status": "ok", "service": "opencut-render-worker" }
+```
 
 ---
 
 ### `POST /render`
 
-Start a render job. Bundles the Remotion project (cached after first run), renders with the provided `VideoConfig`, streams SSE progress, uploads to R2, and updates the DB.
+Start a render job asynchronously. Next.js creates the `render_jobs` DB row first, then calls this with the `jobId`. The worker runs `bundle() → selectComposition() → renderMedia() → R2 upload` in the background and updates the DB row at each stage.
 
 **Request body**
 ```json
-{
-  "jobId": "uuid",
-  "projectId": "uuid",
-  "videoConfig": VideoConfig,
-  "audioSegmentUrls": {
-    "[sceneId]": "https://r2.../audio/..."
-  }
-}
+{ "jobId": "uuid" }
 ```
 
-**Response** — `text/event-stream`
-
-Same event shape as `GET /api/render/[jobId]/stream`. Next.js proxies this stream directly.
+**Response** — `200 OK` (immediate — job runs in background)
+```json
+{ "jobId": "uuid", "status": "queued" }
+```
 
 **Internal process**
 
 ```mermaid
 flowchart TD
-    A["Receive POST /render<br/>videoConfig + jobId"]
-    B["bundle()<br/>webpack Remotion entry<br/>SSE: bundling 0–30%"]
-    C["selectComposition()<br/>VideoComposition + inputProps"]
-    D["renderMedia()<br/>Chromium + FFmpeg<br/>SSE: rendering 30–90%"]
-    E["Upload .mp4 to R2<br/>exports/projectId/jobId.mp4<br/>SSE: uploading 90–100%"]
-    F["UPDATE render_jobs<br/>status=done, output_url"]
-    G["SSE: done event<br/>outputUrl to browser"]
+    A["Receive POST /render { jobId }"]
+    B["Load VideoConfig from DB<br/>videoConfigs table — latest version"]
+    C["bundle() — webpack Remotion entry<br/>cached in memory after first call"]
+    D["selectComposition()<br/>id=VideoComposition, inputProps=VideoConfig"]
+    E["renderMedia() codec=h264<br/>onProgress → UPDATE render_jobs progress"]
+    F["Upload .mp4 to R2<br/>renders/projectId/jobId.mp4"]
+    G["UPDATE render_jobs status=done, output_url<br/>UPDATE projects status=done"]
 
     A --> B --> C --> D --> E --> F --> G
 ```
 
 ---
 
-### `GET /health`
+### `GET /jobs/:jobId`
 
-Health check.
+Get a single render job by ID. Used as an alternative to polling the Next.js API.
 
-**Response** — `200 OK`
-```json
-{ "status": "ok" }
-```
+**Response** — `render_jobs` row.
 
 ---
 
