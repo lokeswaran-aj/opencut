@@ -3,7 +3,7 @@ import { eq, desc } from "drizzle-orm"
 import { db } from "@/db"
 import { projects } from "@/db/schema"
 import { requireAuth } from "@/lib/auth"
-import { getUsage } from "@/lib/limits"
+import { canCreateProject } from "@/lib/limits"
 
 export async function GET() {
   let userId: string
@@ -30,13 +30,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const usage = await getUsage(userId)
-  if (!usage.canGenerate) {
+  if (!(await canCreateProject(userId))) {
     return NextResponse.json(
-      {
-        error: "Video limit reached",
-        message: `You've used ${usage.videosGenerated} of ${usage.maxVideos} free videos.`,
-      },
+      { error: "Project limit reached. Free tier allows up to 5 projects." },
       { status: 429 }
     )
   }

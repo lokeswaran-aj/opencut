@@ -6,6 +6,7 @@ import type { UIMessage } from "ai"
 import { db } from "@/db"
 import { projects, videoConfigs, chatMessages } from "@/db/schema"
 import { requireAuth } from "@/lib/auth"
+import { canSendMessage } from "@/lib/limits"
 import { makeTools } from "@/lib/ai/tools"
 import { buildSystemPrompt } from "@/lib/ai/system-prompt"
 import type { VideoConfig } from "@repo/types"
@@ -34,6 +35,13 @@ export async function POST(req: Request) {
 
   if (!project || project.userId !== userId) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 })
+  }
+
+  if (!(await canSendMessage(userId))) {
+    return NextResponse.json(
+      { error: "Message limit reached. Free tier allows up to 50 messages." },
+      { status: 429 }
+    )
   }
 
   // Load the latest VideoConfig for edit context

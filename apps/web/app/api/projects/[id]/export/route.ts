@@ -3,6 +3,7 @@ import { eq, desc } from "drizzle-orm"
 import { db } from "@/db"
 import { projects, renderJobs } from "@/db/schema"
 import { requireAuth } from "@/lib/auth"
+import { canRender } from "@/lib/limits"
 
 export async function POST(
   _req: Request,
@@ -25,6 +26,13 @@ export async function POST(
 
   if (!project || project.userId !== userId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
+  }
+
+  if (!(await canRender(userId))) {
+    return NextResponse.json(
+      { error: "Render limit reached. Free tier allows up to 10 video exports." },
+      { status: 429 }
+    )
   }
 
   if (project.status === "generating") {
