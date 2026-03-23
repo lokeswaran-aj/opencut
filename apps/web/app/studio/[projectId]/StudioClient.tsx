@@ -39,7 +39,7 @@ export function StudioClient({
 }: StudioClientProps) {
   const [config, setConfig] = useState<VideoConfig | null>(initialConfig)
   const [projectStatus, setProjectStatus] = useState(project.status)
-  const prevChatStatus = useRef<string>("ready")
+  const wasActiveRef = useRef(false)
 
   const { messages, sendMessage, status, error } = useChat({
     messages: initialMessages,
@@ -49,18 +49,27 @@ export function StudioClient({
     }),
   })
 
-  // When streaming ends, poll for the updated VideoConfig
+  // Track any active (streaming/submitted) state so we can poll when it ends,
+  // regardless of which exact state sequence the AI SDK takes.
   useEffect(() => {
-    if (prevChatStatus.current === "streaming" && status === "ready") {
-      fetch(`/api/projects/${project.id}`)
-        .then((r) => r.json())
-        .then((data: { config: VideoConfig | null; project: { status: string } }) => {
-          if (data.config) setConfig(data.config)
-          if (data.project?.status) setProjectStatus(data.project.status)
-        })
-        .catch(console.error)
+    if (status === "streaming" || status === "submitted") {
+      wasActiveRef.current = true
+      return
     }
-    prevChatStatus.current = status
+    if (status === "ready" && wasActiveRef.current) {
+      wasActiveRef.current = false
+      // Small delay to ensure save_video_config DB write is visible before we read
+      const timer = setTimeout(() => {
+        fetch(`/api/projects/${project.id}`)
+          .then((r) => r.json())
+          .then((data: { config: VideoConfig | null; project: { status: string } }) => {
+            if (data.config) setConfig(data.config)
+            if (data.project?.status) setProjectStatus(data.project.status)
+          })
+          .catch(console.error)
+      }, 600)
+      return () => clearTimeout(timer)
+    }
   }, [status, project.id])
 
   const isStreaming = status === "streaming" || status === "submitted"

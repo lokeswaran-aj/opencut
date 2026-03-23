@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from "react"
 import type { UIMessage } from "ai"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 
@@ -120,12 +119,13 @@ interface ChatPanelProps {
 
 export function ChatPanel({ messages, onSend, isStreaming, error }: ChatPanelProps) {
   const [input, setInput] = useState("")
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+    const el = scrollContainerRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages, isStreaming])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -152,7 +152,10 @@ export function ChatPanel({ messages, onSend, isStreaming, error }: ChatPanelPro
         </p>
       </div>
 
-      <ScrollArea className="flex-1 px-4 py-4">
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto min-h-0 px-4 py-4"
+      >
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
             <div className="size-10 rounded-full bg-indigo-500/10 flex items-center justify-center text-xl">
@@ -187,8 +190,7 @@ export function ChatPanel({ messages, onSend, isStreaming, error }: ChatPanelPro
         {error && (
           <p className="text-xs text-red-400 px-2 pb-2">{error.message}</p>
         )}
-        <div ref={bottomRef} />
-      </ScrollArea>
+      </div>
 
       <div className="border-t border-neutral-800 p-4">
         <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-2">

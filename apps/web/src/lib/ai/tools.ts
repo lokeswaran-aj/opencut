@@ -147,7 +147,7 @@ Call this AFTER research_topic. Do NOT call during edits.`,
           scenes: script.scenes.map((s) => ({
             id: s.id,
             type: s.type,
-            durationInFrames: s.durationInFrames,
+            durationInFrames: Number(s.durationInFrames) || 90,
             data: s.data as Record<string, unknown>,
             // narrationText stored temporarily in data for audio generation step
             ...(s.narrationText ? { data: { ...s.data, _narrationText: s.narrationText } } : {}),
@@ -218,12 +218,47 @@ Always call AFTER generate_video_script has returned a VideoConfig.`,
 
     save_video_config: tool({
       description: `Persist the final VideoConfig to the database after ALL audio has been generated.
-Call this once as the last step, passing the complete config with audio segments populated.
+Call this once as the last step, passing the complete config.
+Audio segments are automatically merged from the database — you do not need to include them in the config.
 Updates the project status to 'ready' so the player can display the video.`,
       inputSchema: z.object({
-        config: z.custom<VideoConfig>().describe("The complete VideoConfig with all audio segments"),
+        config: z.custom<VideoConfig>().describe("The VideoConfig returned by generate_video_script (audio is attached automatically)"),
       }),
       execute: async ({ config }) => {
+        // Auto-merge audio: look up all audio files generated for this project and
+        // attach the latest one per scene so the composition can play it.
+        const audioRecords = await db
+          .select()
+          .from(audioFiles)
+          .where(eq(audioFiles.projectId, projectId))
+          .orderBy(desc(audioFiles.createdAt))
+
+        const audioByScene = new Map<string, typeof audioRecords[0]>()
+        for (const audio of audioRecords) {
+          if (!audioByScene.has(audio.sceneId)) {
+            audioByScene.set(audio.sceneId, audio)
+          }
+        }
+
+        const configWithAudio: VideoConfig = {
+          ...config,
+          fps: config.fps ?? 30,
+          scenes: config.scenes.map((scene: Scene) => {
+            const audio = audioByScene.get(scene.id)
+            if (!audio) return scene
+            const segment: AudioSegment = {
+              id: audio.id,
+              type: audio.type as AudioSegment["type"],
+              r2Key: audio.r2Key,
+              publicUrl: audio.publicUrl,
+              durationMs: audio.durationMs ?? 0,
+              durationInFrames: audio.durationInFrames ?? 0,
+              voiceId: audio.voiceId ?? undefined,
+            }
+            return { ...scene, audio: segment }
+          }),
+        }
+
         const [latest] = await db
           .select({ version: videoConfigs.version })
           .from(videoConfigs)
@@ -237,7 +272,7 @@ Updates the project status to 'ready' so the player can display the video.`,
           .insert(videoConfigs)
           .values({
             projectId,
-            config,
+            config: configWithAudio,
             version: nextVersion,
           })
           .returning()
@@ -247,7 +282,7 @@ Updates the project status to 'ready' so the player can display the video.`,
           .set({ status: "ready", updatedAt: new Date() })
           .where(eq(projects.id, projectId))
 
-        return { videoConfigId: saved!.id, version: nextVersion, config }
+        return { videoConfigId: saved!.id, version: nextVersion, config: configWithAudio }
       },
     }),
 

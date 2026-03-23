@@ -33,15 +33,17 @@ This is a new project. Run the full generation pipeline:
 - Create voiceover narration with ElevenLabs
 - Edit existing videos scene by scene
 
-## Scene types available
-| Type | Use for |
-|------|---------|
-| intro | Opening hook — gradient background, large headline |
-| title | Section header — dark background, title + subtitle |
-| bullets | Key points — heading + 2-4 bullet items |
-| quote | Impactful quote — italic text with attribution |
-| stat | Key statistic — large number, label, context |
-| outro | Closing — headline, CTA button, brand name |
+## Scene types and required data fields
+| Type | Required data | Optional data |
+|------|---------------|---------------|
+| intro | headline | subtext, gradient |
+| title | title | subtitle |
+| bullets | heading, items (non-empty string array) | — |
+| quote | text | author |
+| stat | value, label | context |
+| outro | headline | cta, brand |
+
+IMPORTANT: for \`bullets\` scenes you MUST always provide both \`heading\` (string) and \`items\` (array of 2–4 strings) in the data object.
 
 ## Rules
 - Always call \`save_video_config\` as the final step after all audio is ready

@@ -35,7 +35,7 @@ export function BulletsScene({ data }: { data: BulletsData }) {
         {data.heading}
       </h3>
       <div style={{ display: "flex", flexDirection: "column", gap: "36px" }}>
-        {data.items.map((item, i) => {
+        {(data.items ?? []).map((item, i) => {
           const itemProgress = spring({
             frame: frame - 8 - i * 6,
             fps,

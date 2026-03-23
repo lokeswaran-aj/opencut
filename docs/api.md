@@ -31,19 +31,15 @@ The stream emits:
 
 | User message pattern | Tools invoked |
 |---|---|
-| New topic / URL | `research_topic` → `generate_video_script` → `generate_audio_segment` × N → `generate_sound_effect` × N → `save_video_config` |
-| "Change text in scene X" | `patch_scene` |
+| New topic / URL | `research_topic` → `generate_video_script` → `generate_audio_segment` × N → `save_video_config` |
+| "Change text/data in scene X" | `patch_scene` |
 | "Change narration in scene X" | `regenerate_audio_segment` |
-| "Add a section about Y" | `add_scene` → `generate_audio_segment` |
-| "Remove scene X" | `remove_scene` |
-| "Change colors / theme" | `update_theme` |
-| "Make it landscape / square" | `generate_video_script` (new aspect ratio, reuses research report from DB) |
 
 **Notes**
 - Conversation history is loaded from `chat_messages` table on each request.
 - Current `VideoConfig` is injected into the system prompt so the LLM can reference existing scenes without re-generating everything.
 - Firecrawl MCP client is initialized per-request and closed in `onFinish`.
-- The `claude-3-5-sonnet-20241022` model handles all reasoning. `claude-3-5-haiku-20241022` is used only for `patch_scene` and `update_theme` (lightweight structured edits).
+- The model is selected via `getGenerationModel()` / `getEditModel()` from `src/lib/ai/model.ts`. Provider and model names are configurable via `AI_PROVIDER`, `AI_GENERATION_MODEL`, `AI_EDIT_MODEL` env vars.
 
 ---
 
@@ -70,7 +66,7 @@ List all projects for the authenticated user, ordered by `updated_at` descending
 
 ### `POST /api/projects`
 
-Create a new empty project. Checks the user's `user_limits` row before creating — returns `429` if they have reached `maxVideos`. Upserts the `user_limits` row if this is the user's first project.
+Create a new empty project. Counts the user's projects with terminal statuses (`ready`, `rendering`, `done`) — returns `429` if the count reaches `FREE_TIER_MAX_VIDEOS`. No separate limits table exists; the cap is derived live from the `projects` table.
 
 **Request body**
 ```json

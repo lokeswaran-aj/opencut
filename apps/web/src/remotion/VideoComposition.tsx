@@ -1,4 +1,4 @@
-import { AbsoluteFill, Sequence } from "remotion"
+import { AbsoluteFill, Audio, Sequence } from "remotion"
 import type { VideoConfig, Scene } from "@repo/types"
 import { IntroScene } from "./scenes/IntroScene"
 import { TitleScene } from "./scenes/TitleScene"
@@ -41,6 +41,9 @@ export function VideoComposition({ scenes }: VideoConfig) {
             durationInFrames={scene.durationInFrames}
           >
             {renderScene(scene)}
+            {scene.audio?.publicUrl && (
+              <Audio src={scene.audio.publicUrl} />
+            )}
           </Sequence>
         )
       })}

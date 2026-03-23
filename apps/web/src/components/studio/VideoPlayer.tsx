@@ -17,14 +17,15 @@ interface VideoPlayerProps {
 }
 
 export function VideoPlayer({ config, className }: VideoPlayerProps) {
-  const { width, height } = ASPECT_RATIO_DIMENSIONS[config.aspectRatio]
+  const { width, height } =
+    ASPECT_RATIO_DIMENSIONS[config.aspectRatio] ?? ASPECT_RATIO_DIMENSIONS["9:16"]
   const durationInFrames = useMemo(
     () => getTotalDurationInFrames(config.scenes),
     [config.scenes]
   )
   const inputProps = useMemo(() => config, [config])
 
-  if (durationInFrames === 0) return null
+  if (!durationInFrames || isNaN(durationInFrames)) return null
 
   return (
     <div className={className}>
@@ -34,7 +35,7 @@ export function VideoPlayer({ config, className }: VideoPlayerProps) {
         durationInFrames={durationInFrames}
         compositionWidth={width}
         compositionHeight={height}
-        fps={config.fps}
+        fps={config.fps ?? 30}
         style={{ width: "100%", height: "100%" }}
         controls
         loop

@@ -114,7 +114,7 @@ sequenceDiagram
     participant AI as /api/chat
     participant EL as ElevenLabs
     participant R2 as Cloudflare R2
-    participant ZS as Zustand Store
+    participant ZS as StudioClient React useState
     participant RP as Remotion Player
 
     AI->>EL: generate narration for scene N
@@ -193,7 +193,7 @@ flowchart TD
     Google["Google OAuth<br/>via Clerk dashboard config"]
     Session["Clerk JWT cookie<br/>stored in browser"]
     API["API Route Handler<br/>const { userId } = await auth()"]
-    Limit["Check user_limits table<br/>videosGenerated < maxVideos?"]
+    Limit["Count projects WHERE status IN ready/rendering/done<br/>count < FREE_TIER_MAX_VIDEOS?"]
 
     U --> PM
     PM -->|"not signed in"| SignIn
@@ -273,4 +273,4 @@ R2 is used for two asset types, accessed via the AWS S3-compatible SDK (`@aws-sd
 | `audio/{projectId}/{sceneId}.mp3` | ElevenLabs TTS/SFX output | Next.js API during generation | Remotion Player (preview) + renderMedia (export) |
 | `exports/{projectId}/{jobId}.mp4` | Final rendered video | render-worker after `renderMedia()` | User download link |
 
-Audio files are uploaded immediately during generation so the Remotion Player can reference them by public URL in `VideoConfig.audioTrack.segments[].url`.
+Audio files are uploaded immediately during generation so the Remotion Player can reference them by public URL via `scene.audio.publicUrl` on each `Scene` in the `VideoConfig`.

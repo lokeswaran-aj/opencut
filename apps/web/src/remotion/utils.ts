@@ -13,5 +13,5 @@ export const ASPECT_RATIO_DIMENSIONS: Record<
 export function getTotalDurationInFrames(
   scenes: { durationInFrames: number }[]
 ): number {
-  return scenes.reduce((sum, s) => sum + s.durationInFrames, 0)
+  return scenes.reduce((sum, s) => sum + (Number(s.durationInFrames) || 0), 0)
 }
