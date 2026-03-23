@@ -10,9 +10,7 @@ import {
 import { relations } from "drizzle-orm"
 import type { VideoConfig } from "@repo/types"
 
-// ---------------------------------------------------------------------------
 // projects
-// ---------------------------------------------------------------------------
 
 export const projects = pgTable(
   "projects",
@@ -38,9 +36,7 @@ export const projects = pgTable(
   (t) => [index("projects_user_id_idx").on(t.userId)]
 )
 
-// ---------------------------------------------------------------------------
 // video_configs
-// ---------------------------------------------------------------------------
 
 export const videoConfigs = pgTable("video_configs", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -53,9 +49,7 @@ export const videoConfigs = pgTable("video_configs", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 })
 
-// ---------------------------------------------------------------------------
 // research_reports
-// ---------------------------------------------------------------------------
 
 export const researchReports = pgTable("research_reports", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -71,9 +65,7 @@ export const researchReports = pgTable("research_reports", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
-// ---------------------------------------------------------------------------
 // audio_files
-// ---------------------------------------------------------------------------
 
 export const audioFiles = pgTable("audio_files", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -91,9 +83,7 @@ export const audioFiles = pgTable("audio_files", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
-// ---------------------------------------------------------------------------
 // chat_messages
-// ---------------------------------------------------------------------------
 
 export const chatMessages = pgTable("chat_messages", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -105,9 +95,7 @@ export const chatMessages = pgTable("chat_messages", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
-// ---------------------------------------------------------------------------
 // render_jobs
-// ---------------------------------------------------------------------------
 
 export const renderJobs = pgTable("render_jobs", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -129,9 +117,7 @@ export const renderJobs = pgTable("render_jobs", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
-// ---------------------------------------------------------------------------
-// Relations
-// ---------------------------------------------------------------------------
+// relations
 
 export const projectsRelations = relations(projects, ({ many }) => ({
   videoConfigs: many(videoConfigs),
