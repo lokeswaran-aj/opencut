@@ -39,10 +39,11 @@ export function VideoComposition({ scenes }: VideoConfig) {
             key={scene.id}
             from={from}
             durationInFrames={scene.durationInFrames}
+            premountFor={30}
           >
             {renderScene(scene)}
             {scene.audio?.publicUrl && (
-              <Audio src={scene.audio.publicUrl} />
+              <Audio src={scene.audio.publicUrl} pauseWhenBuffering />
             )}
           </Sequence>
         )

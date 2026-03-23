@@ -9,13 +9,17 @@ import type { UIMessage } from "ai"
 
 export default async function StudioPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ projectId: string }>
+  searchParams: Promise<{ q?: string }>
 }) {
   const { userId } = await auth()
   if (!userId) redirect("/sign-in")
 
   const { projectId } = await params
+  const { q } = await searchParams
+  const initialQuery = q ? decodeURIComponent(q) : undefined
 
   const [project] = await db
     .select()
@@ -56,6 +60,7 @@ export default async function StudioPage({
       }}
       initialConfig={(latestConfig?.config as VideoConfig) ?? null}
       initialMessages={initialMessages}
+      initialQuery={initialQuery}
     />
   )
 }

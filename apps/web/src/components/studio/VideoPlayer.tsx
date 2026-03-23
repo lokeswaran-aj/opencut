@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { Player } from "@remotion/player"
+import { preloadAudio } from "@remotion/preload"
 import type { ComponentType } from "react"
 import type { VideoConfig } from "@repo/types"
 import { VideoComposition } from "@/remotion/VideoComposition"
@@ -25,6 +26,17 @@ export function VideoPlayer({ config, className }: VideoPlayerProps) {
   )
   const inputProps = useMemo(() => config, [config])
 
+  // Preload all audio files as soon as the config is available so the browser
+  // has time to buffer them before each scene starts playing.
+  useEffect(() => {
+    const unloaders = config.scenes
+      .filter((s) => s.audio?.publicUrl)
+      .map((s) => preloadAudio(s.audio!.publicUrl))
+    return () => {
+      unloaders.forEach((unload) => unload())
+    }
+  }, [config.scenes])
+
   if (!durationInFrames || isNaN(durationInFrames)) return null
 
   return (
@@ -39,6 +51,7 @@ export function VideoPlayer({ config, className }: VideoPlayerProps) {
         style={{ width: "100%", height: "100%" }}
         controls
         loop
+        bufferStateDelayInMilliseconds={300}
       />
     </div>
   )

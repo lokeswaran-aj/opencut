@@ -2,6 +2,7 @@
 
 import { useChat } from "@ai-sdk/react"
 import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { DefaultChatTransport } from "ai"
 import type { UIMessage } from "ai"
 import type { VideoConfig } from "@repo/types"
@@ -21,6 +22,7 @@ interface StudioClientProps {
   project: StudioProject
   initialConfig: VideoConfig | null
   initialMessages: UIMessage[]
+  initialQuery?: string
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -36,10 +38,13 @@ export function StudioClient({
   project,
   initialConfig,
   initialMessages,
+  initialQuery,
 }: StudioClientProps) {
   const [config, setConfig] = useState<VideoConfig | null>(initialConfig)
   const [projectStatus, setProjectStatus] = useState(project.status)
   const wasActiveRef = useRef(false)
+  const hasAutoSentRef = useRef(false)
+  const router = useRouter()
 
   const { messages, sendMessage, status, error } = useChat({
     messages: initialMessages,
@@ -48,6 +53,18 @@ export function StudioClient({
       body: { projectId: project.id },
     }),
   })
+
+  // Auto-send the initial query passed via ?q= URL param (from the landing page)
+  useEffect(() => {
+    if (initialQuery && messages.length === 0 && !hasAutoSentRef.current) {
+      hasAutoSentRef.current = true
+      sendMessage({ text: initialQuery })
+      // Remove ?q= from the URL to keep it clean
+      router.replace(`/studio/${project.id}`, { scroll: false })
+    }
+  // Run only on mount — sendMessage and router are stable refs
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Track any active (streaming/submitted) state so we can poll when it ends,
   // regardless of which exact state sequence the AI SDK takes.

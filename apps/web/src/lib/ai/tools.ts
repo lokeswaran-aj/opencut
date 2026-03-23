@@ -63,6 +63,12 @@ Instructions:
 // --------------- tools ---------------
 
 export function makeTools(projectId: string) {
+  // Shared state across tools within a single request.
+  // generate_video_script stores the authoritative config here so
+  // save_video_config can use it directly instead of trusting the AI to
+  // perfectly reconstruct the JSON (it sometimes drops durationInFrames).
+  let scriptConfig: VideoConfig | null = null
+
   return {
 
     research_topic: tool({
@@ -154,6 +160,10 @@ Call this AFTER research_topic. Do NOT call during edits.`,
           })),
         }
 
+        // Store for save_video_config to use — the AI may not reproduce all
+        // fields (esp. durationInFrames) when it reconstructs the JSON arg.
+        scriptConfig = config
+
         return config
       },
     }),
@@ -225,6 +235,12 @@ Updates the project status to 'ready' so the player can display the video.`,
         config: z.custom<VideoConfig>().describe("The VideoConfig returned by generate_video_script (audio is attached automatically)"),
       }),
       execute: async ({ config }) => {
+        // Prefer the config captured from generate_video_script within this
+        // request because it always has correct durationInFrames values.
+        // Fall back to the AI-provided config only when saving without a
+        // preceding generate_video_script call (e.g., full re-gen in edits).
+        const baseConfig = scriptConfig ?? config
+
         // Auto-merge audio: look up all audio files generated for this project and
         // attach the latest one per scene so the composition can play it.
         const audioRecords = await db
@@ -241,11 +257,22 @@ Updates the project status to 'ready' so the player can display the video.`,
         }
 
         const configWithAudio: VideoConfig = {
-          ...config,
-          fps: config.fps ?? 30,
-          scenes: config.scenes.map((scene: Scene) => {
+          ...baseConfig,
+          fps: baseConfig.fps ?? 30,
+          scenes: baseConfig.scenes.map((scene: Scene) => {
+            // Defensive: ensure durationInFrames is always a valid positive number
+            const rawDuration = Number(scene.durationInFrames)
             const audio = audioByScene.get(scene.id)
-            if (!audio) return scene
+            const audioDuration = audio?.durationInFrames ?? 0
+            const durationInFrames =
+              rawDuration >= 60
+                ? rawDuration
+                : audioDuration > 0
+                  ? Math.ceil(audioDuration * 1.1)
+                  : 90
+
+            if (!audio) return { ...scene, durationInFrames }
+
             const segment: AudioSegment = {
               id: audio.id,
               type: audio.type as AudioSegment["type"],
@@ -255,7 +282,7 @@ Updates the project status to 'ready' so the player can display the video.`,
               durationInFrames: audio.durationInFrames ?? 0,
               voiceId: audio.voiceId ?? undefined,
             }
-            return { ...scene, audio: segment }
+            return { ...scene, durationInFrames, audio: segment }
           }),
         }
 

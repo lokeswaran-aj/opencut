@@ -1,14 +1,15 @@
 import type { Metadata } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Inter, JetBrains_Mono } from "next/font/google"
 import { ClerkProvider } from "@clerk/nextjs"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import "./globals.css"
 
-const geistSans = Geist({
+const inter = Inter({
   variable: "--font-sans",
   subsets: ["latin"],
 })
 
-const geistMono = Geist_Mono({
+const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
 })
@@ -23,9 +24,9 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <ClerkProvider>
-      <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+      <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} dark`}>
         <body className="bg-background text-foreground antialiased">
-          {children}
+          <TooltipProvider>{children}</TooltipProvider>
         </body>
       </html>
     </ClerkProvider>

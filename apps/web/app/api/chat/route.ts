@@ -51,6 +51,15 @@ export async function POST(req: Request) {
   const isEdit = existingConfig !== null && messages.length > 2
   const model = isEdit ? getEditModel() : getGenerationModel()
 
+  // Mark project as actively generating BEFORE streaming starts so the UI
+  // can show the loading state. save_video_config will set it back to "ready"
+  // when done. We must NOT touch the status inside onFinish (it runs after
+  // save_video_config has already written "ready").
+  await db
+    .update(projects)
+    .set({ status: "generating", updatedAt: new Date() })
+    .where(eq(projects.id, projectId))
+
   const result = streamText({
     model,
     system: buildSystemPrompt(existingConfig),
@@ -58,34 +67,57 @@ export async function POST(req: Request) {
     tools: makeTools(projectId),
     stopWhen: stepCountIs(15),
     onFinish: async ({ response }) => {
-      // Persist the new user message and assistant response
-      const userMsg = lastUserMessage
-      if (userMsg) {
+      // Persist the new user message
+      if (lastUserMessage) {
         await db.insert(chatMessages).values({
           projectId,
           role: "user",
-          parts: userMsg.parts as object,
+          parts: lastUserMessage.parts as object,
         })
       }
 
+      // Persist assistant messages, converting raw model content to the
+      // UI-message part format so they render correctly after a page refresh.
       const assistantMessages = response.messages.filter(
         (m) => m.role === "assistant"
       )
       for (const msg of assistantMessages) {
+        const rawContent = Array.isArray(msg.content)
+          ? msg.content
+          : [{ type: "text", text: String(msg.content) }]
+
+        // Convert model content blocks → UIMessage parts
+        const uiParts = (rawContent as Record<string, unknown>[]).map((part) => {
+          if (part.type === "tool-call") {
+            // Store completed tool calls in dynamic-tool UI format
+            return {
+              type: "dynamic-tool",
+              toolCallId: part.toolCallId,
+              toolName: part.toolName,
+              state: "output-available",
+              input: part.args ?? {},
+            }
+          }
+          // text parts pass through as-is
+          return part
+        })
+
+        // Skip messages that carry no visible content
+        const hasContent = uiParts.some(
+          (p) =>
+            (p.type === "text" && String(p.text ?? "").trim().length > 0) ||
+            p.type === "dynamic-tool"
+        )
+        if (!hasContent) continue
+
         await db.insert(chatMessages).values({
           projectId,
           role: "assistant",
-          parts: Array.isArray(msg.content) ? msg.content : [{ type: "text", text: String(msg.content) }],
+          parts: uiParts,
         })
       }
-
-      // Mark project as generating while tools run, reset on save_video_config
-      if (!isEdit) {
-        await db
-          .update(projects)
-          .set({ status: "generating", updatedAt: new Date() })
-          .where(eq(projects.id, projectId))
-      }
+      // NOTE: do NOT update project status here — save_video_config already
+      // set it to "ready", and touching it again would overwrite that.
     },
   })
 

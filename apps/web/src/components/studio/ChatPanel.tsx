@@ -1,11 +1,21 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
 import type { UIMessage } from "ai"
-import { Textarea } from "@/components/ui/textarea"
-import { Button } from "@/components/ui/button"
+import { MessageSquare } from "lucide-react"
+import {
+  Conversation,
+  ConversationContent,
+  ConversationEmptyState,
+  ConversationScrollButton,
+} from "@/components/ai-elements/conversation"
+import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message"
+import {
+  PromptInput,
+  PromptInputTextarea,
+  PromptInputFooter,
+  PromptInputSubmit,
+} from "@/components/ai-elements/prompt-input"
 
-// Human-readable labels for each tool call
 const TOOL_LABELS: Record<string, { pending: string; done: string }> = {
   research_topic: { pending: "Researching topic…", done: "Research complete" },
   generate_video_script: { pending: "Writing video script…", done: "Script ready" },
@@ -15,20 +25,10 @@ const TOOL_LABELS: Record<string, { pending: string; done: string }> = {
   regenerate_audio_segment: { pending: "Regenerating audio…", done: "Audio updated" },
 }
 
-function ToolCallBubble({
-  toolName,
-  isDone,
-}: {
-  toolName: string
-  isDone: boolean
-}) {
-  const labels = TOOL_LABELS[toolName] ?? {
-    pending: `Running ${toolName}…`,
-    done: toolName,
-  }
-
+function ToolCallBubble({ toolName, isDone }: { toolName: string; isDone: boolean }) {
+  const labels = TOOL_LABELS[toolName] ?? { pending: `Running ${toolName}…`, done: toolName }
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-neutral-800/60 px-3 py-2 text-xs">
+    <div className="flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs my-1">
       {isDone ? (
         <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
           ✓
@@ -36,77 +36,54 @@ function ToolCallBubble({
       ) : (
         <span className="size-3 shrink-0 rounded-full border border-amber-400 border-t-transparent animate-spin" />
       )}
-      <span className={isDone ? "text-neutral-400" : "text-amber-300"}>
+      <span className={isDone ? "text-muted-foreground" : "text-amber-400"}>
         {isDone ? labels.done : labels.pending}
       </span>
     </div>
   )
 }
 
-function MessageBubble({ message }: { message: UIMessage }) {
-  const isUser = message.role === "user"
-
+/**
+ * isLiveMessage: true only for the very last message while streaming is active.
+ * For all other messages (past messages OR after streaming ends) tool calls should
+ * always render as completed — they must have finished since the message was created.
+ */
+function MessageParts({
+  message,
+  isLiveMessage,
+}: {
+  message: UIMessage
+  isLiveMessage: boolean
+}) {
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4`}>
-      <div
-        className={`max-w-[85%] flex flex-col gap-1.5 ${isUser ? "items-end" : "items-start"}`}
-      >
-        <span className="px-1 text-[10px] font-medium uppercase tracking-wider text-neutral-500">
-          {isUser ? "You" : "Opencut AI"}
-        </span>
+    <>
+      {message.parts.map((part, i) => {
+        if (part.type === "text") {
+          const text = (part as { type: "text"; text: string }).text
+          if (!text?.trim()) return null
+          return <MessageResponse key={i}>{text}</MessageResponse>
+        }
 
-        {message.parts.map((part, i) => {
-          // Text part
-          if (part.type === "text") {
-            const text = (part as { type: "text"; text: string }).text
-            if (!text?.trim()) return null
-            return (
-              <div
-                key={i}
-                className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
-                  isUser
-                    ? "bg-indigo-600 text-white"
-                    : "bg-neutral-800 text-neutral-100"
-                }`}
-              >
-                {text}
-              </div>
-            )
-          }
+        if (part.type === "dynamic-tool") {
+          const p = part as { type: "dynamic-tool"; toolName: string; state: string }
+          // Only use live state for the actively-streaming message; otherwise always done
+          const isDone = !isLiveMessage || p.state === "output-available"
+          return (
+            <ToolCallBubble key={i} toolName={p.toolName} isDone={isDone} />
+          )
+        }
 
-          // Dynamic tool invocation (server-side tools stream as dynamic-tool)
-          if (part.type === "dynamic-tool") {
-            const p = part as {
-              type: "dynamic-tool"
-              toolName: string
-              state: string
-            }
-            return (
-              <ToolCallBubble
-                key={i}
-                toolName={p.toolName}
-                isDone={p.state === "output-available"}
-              />
-            )
-          }
+        // Fallback for any legacy "tool-{name}" typed parts
+        if (typeof part.type === "string" && part.type.startsWith("tool-") && part.type !== "tool-call") {
+          const toolName = part.type.slice(5)
+          const p = part as { type: string; state?: string }
+          const isDone = !isLiveMessage || p.state === "output-available"
+          return <ToolCallBubble key={i} toolName={toolName} isDone={isDone} />
+        }
 
-          // Typed tool parts (tool-{toolName})
-          if (typeof part.type === "string" && part.type.startsWith("tool-")) {
-            const toolName = part.type.slice(5)
-            const p = part as { type: string; state: string }
-            return (
-              <ToolCallBubble
-                key={i}
-                toolName={toolName}
-                isDone={p.state === "output-available"}
-              />
-            )
-          }
-
-          return null
-        })}
-      </div>
-    </div>
+        return null
+      })}
+    </>
   )
 }
 
@@ -118,98 +95,73 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ messages, onSend, isStreaming, error }: ChatPanelProps) {
-  const [input, setInput] = useState("")
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const formRef = useRef<HTMLFormElement>(null)
-
-  useEffect(() => {
-    const el = scrollContainerRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [messages, isStreaming])
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const text = input.trim()
-    if (!text || isStreaming) return
-    onSend(text)
-    setInput("")
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault()
-      formRef.current?.requestSubmit()
-    }
-  }
-
-  const isEmpty = messages.length === 0
+  const status = isStreaming ? "streaming" : "ready"
 
   return (
-    <div className="flex w-[420px] shrink-0 flex-col border-r border-neutral-800 bg-neutral-950">
-      <div className="border-b border-neutral-800 px-4 py-3">
-        <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">
+    <div className="flex w-[400px] shrink-0 flex-col border-r border-border bg-background">
+      <div className="border-b border-border px-4 py-3">
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Chat
         </p>
       </div>
 
-      <div
-        ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto min-h-0 px-4 py-4"
-      >
-        {isEmpty ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
-            <div className="size-10 rounded-full bg-indigo-500/10 flex items-center justify-center text-xl">
-              ✦
-            </div>
-            <p className="text-sm text-neutral-400 max-w-[260px]">
-              Describe what video you want to create, or paste a URL to
-              research.
-            </p>
-            <p className="text-xs text-neutral-600">
-              Try: "Create a 60-second explainer about LLMs"
-            </p>
-          </div>
-        ) : (
-          <>
-            {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
-            ))}
-            {isStreaming && (
-              <div className="flex justify-start mb-4">
-                <div className="rounded-2xl bg-neutral-800 px-3.5 py-2.5">
-                  <span className="flex gap-1 items-center">
-                    <span className="size-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:0ms]" />
-                    <span className="size-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:150ms]" />
-                    <span className="size-1.5 rounded-full bg-neutral-400 animate-bounce [animation-delay:300ms]" />
-                  </span>
+      <Conversation className="flex-1 min-h-0">
+        <ConversationContent>
+          {messages.length === 0 ? (
+            <ConversationEmptyState
+              icon={<MessageSquare className="size-8 opacity-40" />}
+              title="Start generating"
+              description="Describe a topic or paste a URL to create your video."
+            />
+          ) : (
+            messages.map((message, idx) => {
+              // Only the last message uses live tool-call state while streaming.
+              // All earlier messages (and any message after streaming ends) are
+              // considered complete so their tool-call bubbles show as done.
+              const isLiveMessage = isStreaming && idx === messages.length - 1
+              return (
+                <Message from={message.role as "user" | "assistant"} key={message.id}>
+                  <MessageContent>
+                    <MessageParts message={message} isLiveMessage={isLiveMessage} />
+                  </MessageContent>
+                </Message>
+              )
+            })
+          )}
+          {isStreaming && messages.at(-1)?.role !== "assistant" && (
+            <Message from="assistant">
+              <MessageContent>
+                <div className="flex gap-1 items-center px-1 py-0.5">
+                  <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:0ms]" />
+                  <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:150ms]" />
+                  <span className="size-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:300ms]" />
                 </div>
-              </div>
-            )}
-          </>
-        )}
-        {error && (
-          <p className="text-xs text-red-400 px-2 pb-2">{error.message}</p>
-        )}
-      </div>
+              </MessageContent>
+            </Message>
+          )}
+          {error && (
+            <p className="text-xs text-destructive px-2">{error.message}</p>
+          )}
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
 
-      <div className="border-t border-neutral-800 p-4">
-        <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-2">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Describe your video… (⌘↵ to send)"
-            className="min-h-[80px] resize-none bg-neutral-900 border-neutral-700 text-sm text-white placeholder:text-neutral-600 focus-visible:ring-indigo-500 focus-visible:border-indigo-500"
+      <div className="border-t border-border p-3">
+        <PromptInput
+          onSubmit={({ text }) => {
+            if (text.trim() && !isStreaming) onSend(text)
+          }}
+        >
+          <PromptInputTextarea
+            placeholder="Describe your video… (Enter to send)"
             disabled={isStreaming}
+            className="min-h-[64px] text-sm"
           />
-          <Button
-            type="submit"
-            disabled={isStreaming || !input.trim()}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm"
-          >
-            {isStreaming ? "Generating…" : "Generate"}
-          </Button>
-        </form>
+          <PromptInputFooter>
+            <span className="text-xs text-muted-foreground/60">⌘↵</span>
+            <PromptInputSubmit status={status} disabled={isStreaming} />
+          </PromptInputFooter>
+        </PromptInput>
       </div>
     </div>
   )
