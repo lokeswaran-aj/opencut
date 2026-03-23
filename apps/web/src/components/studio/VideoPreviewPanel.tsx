@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import type { VideoConfig } from "@repo/types"
 import { VideoPlayer } from "./VideoPlayer"
 import { Button } from "@/components/ui/button"
-import { Download, Loader2, CheckCircle, XCircle } from "lucide-react"
+import { Download, Loader2, XCircle } from "lucide-react"
 
 interface RenderJob {
   id: string
@@ -85,6 +85,9 @@ export function VideoPreviewPanel({
           ? "aspect-square h-[480px]"
           : "aspect-[4/5] h-[560px]"
 
+  // The download URL always routes through our Next.js proxy to avoid CORS issues
+  const downloadUrl = `/api/projects/${projectId}/download`
+
   // Poll for job status while rendering
   const pollJob = useCallback(
     async (jobId: string) => {
@@ -93,33 +96,27 @@ export function VideoPreviewPanel({
         if (!res.ok) return
         const job: RenderJob = await res.json()
 
-        if (job.status === "done" && job.outputUrl) {
-          setExportState({ type: "done", outputUrl: job.outputUrl })
+        if (job.status === "done") {
+          setExportState({ type: "done", outputUrl: downloadUrl })
           return
         }
         if (job.status === "failed") {
-          setExportState({
-            type: "error",
-            message: job.error ?? "Render failed",
-          })
+          setExportState({ type: "error", message: job.error ?? "Render failed" })
           return
         }
-        // Still in progress — update displayed job and schedule next poll
         setExportState({ type: "polling", job })
         setTimeout(() => pollJob(jobId), 2500)
       } catch {
         setTimeout(() => pollJob(jobId), 4000)
       }
     },
-    [projectId]
+    [projectId, downloadUrl]
   )
 
   const handleExport = async () => {
     setExportState({ type: "requesting" })
     try {
-      const res = await fetch(`/api/projects/${projectId}/export`, {
-        method: "POST",
-      })
+      const res = await fetch(`/api/projects/${projectId}/export`, { method: "POST" })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         setExportState({
@@ -129,12 +126,10 @@ export function VideoPreviewPanel({
         return
       }
       const job: RenderJob = await res.json()
-
-      if (job.status === "done" && job.outputUrl) {
-        setExportState({ type: "done", outputUrl: job.outputUrl })
+      if (job.status === "done") {
+        setExportState({ type: "done", outputUrl: downloadUrl })
         return
       }
-
       setExportState({ type: "polling", job })
       setTimeout(() => pollJob(job.id), 2500)
     } catch {
@@ -142,10 +137,31 @@ export function VideoPreviewPanel({
     }
   }
 
-  // Reset export state when config changes (new video generated)
+  // On mount (and whenever projectId changes): restore state from any existing render job
   useEffect(() => {
-    setExportState({ type: "idle" })
-  }, [config?.id])
+    let cancelled = false
+    fetch(`/api/projects/${projectId}/render-job`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((job: RenderJob | null) => {
+        if (cancelled || !job) return
+        if (job.status === "done") {
+          setExportState({ type: "done", outputUrl: downloadUrl })
+        } else if (job.status === "failed") {
+          setExportState({ type: "error", message: job.error ?? "Render failed" })
+        } else if (
+          job.status === "queued" ||
+          job.status === "bundling" ||
+          job.status === "rendering" ||
+          job.status === "uploading"
+        ) {
+          setExportState({ type: "polling", job })
+          setTimeout(() => pollJob(job.id), 2500)
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
 
   const isRendering =
     exportState.type === "requesting" || exportState.type === "polling"
@@ -173,11 +189,10 @@ export function VideoPreviewPanel({
 
           {/* Export button — morphs based on state */}
           {exportState.type === "done" ? (
+            // Same-origin proxy URL — browser honours the download attribute
             <a
               href={exportState.outputUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              download
+              download={`opencut-${projectId}.mp4`}
               className="inline-flex items-center gap-1.5 h-7 px-3 text-xs rounded-md font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
             >
               <Download className="size-3" />
