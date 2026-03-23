@@ -185,7 +185,7 @@ Clerk handles all authentication. There are no local user tables in Postgres —
 ```mermaid
 flowchart TD
     U["User visits /dashboard<br/>or /studio/projectId"]
-    PM["middleware.ts<br/>clerkMiddleware()"]
+    PM["proxy.ts<br/>clerkMiddleware()"]
     SignIn["Clerk hosted sign-in<br/>/sign-in page<br/>SignIn component"]
     Google["Google OAuth<br/>via Clerk dashboard config"]
     Session["Clerk JWT cookie<br/>stored in browser"]
@@ -203,7 +203,7 @@ flowchart TD
 ```
 
 Key points:
-- `middleware.ts` (Next.js 16) uses `clerkMiddleware()` + `createRouteMatcher` to protect `/dashboard` and `/studio/*`
+- `proxy.ts` (Next.js 16) uses `clerkMiddleware()` + `createRouteMatcher` to protect `/dashboard` and `/studio/*`
 - `auth()` from `@clerk/nextjs/server` gives `userId` in any server component or route handler — no DB lookup needed
 - `useUser()` hook in client components
 - `<SignIn />`, `<SignUp />`, `<UserButton />` prebuilt components handle all UI

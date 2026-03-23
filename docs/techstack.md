@@ -50,14 +50,14 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 
 | Package | Version | Purpose |
 |---|---|---|
-| `next` | `^16.1.6` | App framework. App Router, async params, middleware.ts |
+| `next` | `^16.1.6` | App framework. App Router, async params, proxy.ts |
 | `react` | `^19.0.0` | UI |
 | `react-dom` | `^19.0.0` | DOM rendering |
 | `typescript` | `^5.8.0` | Type checking |
 
 **Next.js 16 notes used in this project:**
 - `params` in route handlers and page components is now a `Promise` → always `await params`
-- `middleware.ts` lives at the project root alongside `app/` (not inside `src/`)
+- `proxy.ts` lives at the project root alongside `app/` (not inside `src/`)
 - `PageProps<'/path/[param]'>` helper type for type-safe page props
 
 ---
@@ -99,7 +99,7 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 - Saves significant setup time for a hackathon
 
 **Key integration points:**
-- `middleware.ts` — `clerkMiddleware()` protects `/dashboard` and `/studio/*`
+- `proxy.ts` — `clerkMiddleware()` protects `/dashboard` and `/studio/*`
 - `<ClerkProvider>` wraps root layout
 - `/sign-in` and `/sign-up` pages use Clerk's prebuilt components
 - `@clerk/elements` + shadcn for custom-styled auth forms if needed
@@ -349,7 +349,7 @@ PORT=3001
 /api/usage                     GET — videosGenerated / maxVideos for current user
 ```
 
-`middleware.ts` (Next.js 16) protects `/dashboard` and `/studio/*` via `clerkMiddleware`. All `/api/*` routes verify `userId` via `auth()` inside the handler.
+`proxy.ts` (Next.js 16) protects `/dashboard` and `/studio/*` via `clerkMiddleware`. All `/api/*` routes verify `userId` via `auth()` inside the handler.
 
 ---
 

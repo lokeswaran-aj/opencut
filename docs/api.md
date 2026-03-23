@@ -219,7 +219,7 @@ Clerk handles all authentication. There is no `/api/auth` route in this app. Cle
 
 | Layer | How |
 |---|---|
-| Route protection | `middleware.ts` — `clerkMiddleware()` + `createRouteMatcher(['/dashboard(.*)', '/studio(.*)'])` |
+| Route protection | `proxy.ts` — `clerkMiddleware()` + `createRouteMatcher(['/dashboard(.*)', '/studio(.*)'])` |
 | Server components / route handlers | `const { userId } = await auth()` from `@clerk/nextjs/server` |
 | Client components | `const { user } = useUser()` from `@clerk/nextjs` |
 | Sign-in page | `/sign-in` — renders Clerk `<SignIn />` component |
@@ -228,7 +228,7 @@ Clerk handles all authentication. There is no `/api/auth` route in this app. Cle
 
 Google OAuth is configured entirely inside the Clerk dashboard — no client ID/secret needed in app environment variables.
 
-`middleware.ts` (Next.js 16 replaces `middleware.ts`):
+`proxy.ts` (Next.js 16 replaces `proxy.ts`):
 
 ```typescript
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
