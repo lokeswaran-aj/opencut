@@ -70,7 +70,7 @@ export function HomeChat() {
   const status = isSubmitting ? "submitted" : "ready"
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-3">
+    <div className="w-full max-w-2xl mx-auto flex flex-col gap-3">
       <PromptInput
         onSubmit={({ text }) => submit(text)}
         className="shadow-sm"
@@ -82,25 +82,28 @@ export function HomeChat() {
           className="min-h-[56px] text-sm"
         />
         <PromptInputFooter>
-          <div className="flex flex-wrap gap-1.5 min-w-0">
-            {EXAMPLES.map((ex) => (
-              <button
-                key={ex}
-                type="button"
-                disabled={isSubmitting}
-                onClick={() => submit(ex)}
-                className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-full px-3 py-1 transition-colors hover:border-foreground/30 disabled:opacity-40"
-              >
-                {ex}
-              </button>
-            ))}
-          </div>
+          <span className="text-xs text-muted-foreground/60">⌘↵</span>
           <PromptInputSubmit
             status={status}
             disabled={isSubmitting || !isLoaded}
           />
         </PromptInputFooter>
       </PromptInput>
+
+      {/* Example prompts — below the input */}
+      <div className="flex flex-wrap gap-2 justify-center">
+        {EXAMPLES.map((ex) => (
+          <button
+            key={ex}
+            type="button"
+            disabled={isSubmitting || !isLoaded}
+            onClick={() => submit(ex)}
+            className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-full px-3 py-1.5 transition-colors hover:border-foreground/30 disabled:opacity-40"
+          >
+            {ex}
+          </button>
+        ))}
+      </div>
 
       {!isSignedIn && isLoaded && (
         <p className="text-center text-xs text-muted-foreground">
