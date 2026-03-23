@@ -1,16 +1,13 @@
-import Link from "next/link"
-import { HomeChat } from "@/components/home/HomeChat"
-import { NavActions } from "@/components/home/NavActions"
+import Link from "next/link";
+import { HomeChat } from "@/components/home/HomeChat";
+import { NavActions } from "@/components/home/NavActions";
 
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <nav className="px-6 py-4 border-b border-border/50">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <Link
-            href="/"
-            className="font-semibold text-sm tracking-tight hover:opacity-80 transition-opacity"
-          >
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
+          <Link href="/" className="font-bold tracking-tight text-white">
             opencut
           </Link>
           <NavActions />
@@ -26,10 +23,6 @@ export default function HomePage() {
           <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight whitespace-nowrap">
             What do you want to create today?
           </h1>
-          <p className="text-muted-foreground text-base leading-relaxed max-w-sm mx-auto">
-            Describe a topic or paste a URL. Opencut researches, scripts,
-            narrates and produces a fully-edited video — in under a minute.
-          </p>
         </div>
 
         <HomeChat />
@@ -39,5 +32,5 @@ export default function HomePage() {
         © {new Date().getFullYear()} Opencut
       </footer>
     </div>
-  )
+  );
 }

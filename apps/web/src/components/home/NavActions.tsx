@@ -1,41 +1,39 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { UserButton, useUser } from "@clerk/nextjs"
+import Link from "next/link";
+import { UserButton, useUser } from "@clerk/nextjs";
+import { Button } from "@/components/ui/button";
 
 export function NavActions() {
-  const { isSignedIn, isLoaded } = useUser()
+  const { isSignedIn, isLoaded } = useUser();
 
-  if (!isLoaded) return <div className="h-8 w-32 rounded-lg bg-muted/30 animate-pulse" />
+  if (!isLoaded)
+    return <div className="h-8 w-32 rounded-lg bg-muted/30 animate-pulse" />;
 
   if (isSignedIn) {
     return (
       <div className="flex items-center gap-4">
-        <Link
-          href="/dashboard"
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
+        <Button render={<Link href="/dashboard" />} nativeButton={false}>
           Dashboard
-        </Link>
+        </Button>
         <UserButton />
       </div>
-    )
+    );
   }
 
   return (
     <div className="flex items-center gap-4">
-      <Link
-        href="/sign-in"
-        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+      <Button
+        variant="ghost"
+        size="sm"
+        render={<Link href="/sign-in" />}
+        nativeButton={false}
       >
         Sign in
-      </Link>
-      <Link
-        href="/sign-up"
-        className="text-sm bg-foreground text-background rounded-lg px-4 py-1.5 hover:opacity-80 transition-opacity font-medium"
-      >
+      </Button>
+      <Button size="sm" render={<Link href="/sign-up" />} nativeButton={false}>
         Get started
-      </Link>
+      </Button>
     </div>
-  )
+  );
 }
