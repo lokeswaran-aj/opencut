@@ -1,6 +1,6 @@
 import { generateObject, tool } from "ai"
-import { anthropic } from "@ai-sdk/anthropic"
 import { ElevenLabsClient } from "elevenlabs"
+import { getGenerationModel } from "@/lib/ai/model"
 import FirecrawlApp from "@mendable/firecrawl-js"
 import { createHash } from "crypto"
 import { z } from "zod"
@@ -134,7 +134,7 @@ Call this AFTER research_topic. Do NOT call during edits.`,
       }),
       execute: async ({ researchContent, topic, aspectRatio }) => {
         const { object: script } = await generateObject({
-          model: anthropic("claude-3-5-sonnet-20241022"),
+          model: getGenerationModel(),
           schema: VideoScriptSchema,
           prompt: buildScriptPrompt(researchContent, topic, aspectRatio),
         })

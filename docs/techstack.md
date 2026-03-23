@@ -67,15 +67,20 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 | Package | Version | Purpose |
 |---|---|---|
 | `ai` | `^6.0.134` | AI SDK v6 core — `streamText`, `generateObject`, `tool`, `DefaultChatTransport` |
-| `@ai-sdk/anthropic` | `^3.0.63` | Anthropic provider for AI SDK |
+| `@ai-sdk/anthropic` | `^3.0.63` | Anthropic provider |
+| `@ai-sdk/google-vertex` | latest | Google Vertex AI provider — Gemini models via service account |
 | `@ai-sdk/react` | `^3.0.136` | `useChat` hook — installed separately (not bundled with `ai` in v6) |
 
-**Models used:**
+**Provider selection** is controlled by `AI_PROVIDER` env var (`"anthropic"` default, `"vertex"` for Gemini). All model logic lives in `src/lib/ai/model.ts` which exports `getGenerationModel()` and `getEditModel()`.
 
-| Model string | Used for |
-|---|---|
-| `anthropic("claude-3-5-sonnet-20241022")` | Research synthesis, script generation, complex tool routing |
-| `anthropic("claude-3-5-haiku-20241022")` | Lightweight edits: patch_scene, update_theme, reorder_scenes |
+| Env var | Default (Anthropic) | Default (Vertex) |
+|---|---|---|
+| `AI_GENERATION_MODEL` | `claude-3-5-sonnet-20241022` | `gemini-2.5-pro` |
+| `AI_EDIT_MODEL` | `claude-3-5-haiku-20241022` | `gemini-2.5-flash` |
+
+**Google Vertex AI credentials** — choose one:
+- **Local dev**: set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`
+- **Deployment**: set `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY` (+ optional `GOOGLE_PRIVATE_KEY_ID`) extracted from the service account JSON
 
 **AI SDK v6 key changes from v4:**
 - Model identifiers: `anthropic("claude-3-5-sonnet-20241022")` — same pattern, new model names

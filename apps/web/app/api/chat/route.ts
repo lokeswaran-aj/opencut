@@ -1,6 +1,6 @@
 import { streamText, convertToModelMessages, stepCountIs } from "ai"
-import { anthropic } from "@ai-sdk/anthropic"
 import { NextResponse } from "next/server"
+import { getGenerationModel, getEditModel } from "@/lib/ai/model"
 import { eq, desc } from "drizzle-orm"
 import type { UIMessage } from "ai"
 import { db } from "@/db"
@@ -49,9 +49,7 @@ export async function POST(req: Request) {
   // Detect if this is an edit or new generation to pick the right model
   const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")
   const isEdit = existingConfig !== null && messages.length > 2
-  const model = isEdit
-    ? anthropic("claude-3-5-haiku-20241022")
-    : anthropic("claude-3-5-sonnet-20241022")
+  const model = isEdit ? getEditModel() : getGenerationModel()
 
   const result = streamText({
     model,
