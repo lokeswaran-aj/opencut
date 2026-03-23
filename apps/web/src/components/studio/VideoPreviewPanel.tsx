@@ -5,6 +5,7 @@ import type { VideoConfig } from "@repo/types"
 import { VideoPlayer } from "./VideoPlayer"
 import { Button } from "@/components/ui/button"
 import { Download, Loader2, XCircle } from "lucide-react"
+import { toast } from "sonner"
 
 interface RenderJob {
   id: string
@@ -98,10 +99,15 @@ export function VideoPreviewPanel({
 
         if (job.status === "done") {
           setExportState({ type: "done", outputUrl: downloadUrl })
+          toast.success("Video rendered!", {
+            description: "Your MP4 is ready to download.",
+          })
           return
         }
         if (job.status === "failed") {
-          setExportState({ type: "error", message: job.error ?? "Render failed" })
+          const msg = job.error ?? "Render failed"
+          setExportState({ type: "error", message: msg })
+          toast.error("Render failed", { description: msg })
           return
         }
         setExportState({ type: "polling", job })
@@ -119,21 +125,29 @@ export function VideoPreviewPanel({
       const res = await fetch(`/api/projects/${projectId}/export`, { method: "POST" })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        setExportState({
-          type: "error",
-          message: (body as { error?: string }).error ?? "Failed to start export",
+        const message = (body as { error?: string }).error ?? "Failed to start export"
+        const isLimit = res.status === 429
+        setExportState({ type: "error", message })
+        toast.error(isLimit ? "Render limit reached" : "Export failed", {
+          description: message,
         })
         return
       }
       const job: RenderJob = await res.json()
       if (job.status === "done") {
         setExportState({ type: "done", outputUrl: downloadUrl })
+        toast.success("Video rendered!", { description: "Your MP4 is ready to download." })
         return
       }
+      toast.info("Rendering started", {
+        description: "We'll notify you when the MP4 is ready.",
+      })
       setExportState({ type: "polling", job })
       setTimeout(() => pollJob(job.id), 2500)
     } catch {
-      setExportState({ type: "error", message: "Network error — please retry" })
+      const message = "Network error — please retry"
+      setExportState({ type: "error", message })
+      toast.error("Export failed", { description: message })
     }
   }
 
@@ -189,10 +203,10 @@ export function VideoPreviewPanel({
 
           {/* Export button — morphs based on state */}
           {exportState.type === "done" ? (
-            // Same-origin proxy URL — browser honours the download attribute
             <a
               href={exportState.outputUrl}
               download={`opencut-${projectId}.mp4`}
+              onClick={() => toast.success("Download started", { description: "opencut-video.mp4" })}
               className="inline-flex items-center gap-1.5 h-7 px-3 text-xs rounded-md font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
             >
               <Download className="size-3" />

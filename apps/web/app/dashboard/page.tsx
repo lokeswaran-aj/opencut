@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { UserButton } from "@clerk/nextjs"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 
@@ -58,10 +59,15 @@ export default function DashboardPage() {
   })
 
   useEffect(() => {
-    fetch("/api/projects")
+    const controller = new AbortController()
+    fetch("/api/projects", { signal: controller.signal })
       .then((r) => r.json())
       .then(setProjects)
+      .catch((err) => {
+        if (err.name !== "AbortError") console.error(err)
+      })
       .finally(() => setLoading(false))
+    return () => controller.abort()
   }, [])
 
   async function createProject(e: React.FormEvent) {
@@ -79,19 +85,19 @@ export default function DashboardPage() {
         }),
       })
 
-      if (res.status === 429) {
-        const data = await res.json() as { message: string }
-        alert(data.message)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string }
+        toast.error(res.status === 429 ? "Project limit reached" : "Error", {
+          description: data.error ?? "Failed to create project",
+        })
         return
       }
-
-      if (!res.ok) throw new Error("Failed to create project")
 
       const project = await res.json() as Project
       router.push(`/studio/${project.id}`)
     } catch (err) {
       console.error(err)
-      alert("Something went wrong. Please try again.")
+      toast.error("Network error", { description: "Something went wrong. Please try again." })
     } finally {
       setCreating(false)
     }

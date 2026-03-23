@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useUser } from "@clerk/nextjs"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import {
   PromptInput,
   PromptInputTextarea,
@@ -38,10 +39,19 @@ export function HomeChat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: trimmed.slice(0, 60), topic: trimmed }),
       })
-      if (!res.ok) throw new Error("Failed to create project")
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        const message = (body as { error?: string }).error ?? "Failed to create project"
+        toast.error(res.status === 429 ? "Project limit reached" : "Error", {
+          description: message,
+        })
+        setIsSubmitting(false)
+        return
+      }
       const project = await res.json()
       router.push(`/studio/${project.id}?q=${encodeURIComponent(trimmed)}`)
     } catch {
+      toast.error("Network error", { description: "Could not create project. Please try again." })
       setIsSubmitting(false)
     }
   }

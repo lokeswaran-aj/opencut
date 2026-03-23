@@ -8,6 +8,7 @@ import type { UIMessage } from "ai"
 import type { VideoConfig } from "@repo/types"
 import { ChatPanel } from "@/components/studio/ChatPanel"
 import { VideoPreviewPanel } from "@/components/studio/VideoPreviewPanel"
+import { toast } from "sonner"
 
 export interface StudioProject {
   id: string
@@ -47,6 +48,13 @@ export function StudioClient({
   const router = useRouter()
 
   const { messages, sendMessage, status, error } = useChat({
+    onError: (err) => {
+      const message = err.message ?? "Something went wrong"
+      const isLimit = message.toLowerCase().includes("limit")
+      toast.error(isLimit ? "Message limit reached" : "Generation failed", {
+        description: message,
+      })
+    },
     messages: initialMessages,
     transport: new DefaultChatTransport({
       api: "/api/chat",

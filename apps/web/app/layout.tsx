@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter, JetBrains_Mono } from "next/font/google"
 import { ClerkProvider } from "@clerk/nextjs"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { Toaster } from "@/components/ui/sonner"
 import "./globals.css"
 
 const inter = Inter({
@@ -25,8 +26,9 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} dark`}>
-        <body className="bg-background text-foreground antialiased">
+        <body className="bg-background text-foreground antialiased" suppressHydrationWarning>
           <TooltipProvider>{children}</TooltipProvider>
+          <Toaster richColors position="bottom-right" />
         </body>
       </html>
     </ClerkProvider>
