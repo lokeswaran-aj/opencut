@@ -47,11 +47,11 @@ Shared Zod schemas and TypeScript types for `VideoConfig`, `Scene`, `AudioSegmen
 ```mermaid
 graph TB
     subgraph Browser["Browser"]
-        Chat["Chat Panel<br/>AI Elements: Conversation + Message<br/>PromptInput + Loader + Sources<br/>Custom tool cards per tool type"]
+        Chat["ChatPanel<br/>useChat (DefaultChatTransport)<br/>Tool call indicators per tool type"]
         Player["Remotion Player<br/>inputProps = VideoConfig<br/>Live preview at 30fps"]
-        Zustand["Zustand Store<br/>VideoConfig state"]
-        Chat -->|"save_video_config tool result"| Zustand
-        Zustand -->|"inputProps binding"| Player
+        State["StudioClient React state<br/>useState VideoConfig<br/>polled after streaming ends"]
+        Chat -->|"streaming ends → fetch /api/projects/id"| State
+        State -->|"config prop"| Player
     end
 
     subgraph Web["apps/web — Next.js 16"]
@@ -120,13 +120,16 @@ sequenceDiagram
     AI->>EL: generate narration for scene N
     EL-->>AI: audio buffer
     AI->>R2: upload audio/projectId/sceneN.mp3
-    AI-->>ZS: save_video_config tool result<br/>(scenes + audio URLs)
-    ZS-->>RP: inputProps update
-    RP-->>RP: React re-render at 30fps<br/>Audio plays via R2 URL
-    Note over RP: Zero server involvement<br/>Fully browser-side
+    AI-->>PG: save_video_config → write to video_configs
+    Note over AI,PG: Streaming ends (status: ready)
+    RP->>N: GET /api/projects/projectId
+    N->>PG: SELECT latest video_config
+    N-->>RP: { config: VideoConfig }
+    RP-->>RP: setConfig(data.config)<br/>React re-render at 30fps
+    Note over RP: Audio plays via R2 URL
 ```
 
-The Remotion `<Player>` is a standard React component bundled with the Next.js app. When the AI's `save_video_config` tool writes to the Zustand store, React re-renders the Player immediately with the new config. Audio files are fetched directly from R2 via presigned URLs.
+The Remotion `<Player>` is a standard React component bundled with the Next.js app. When the AI SDK's `status` transitions from `"streaming"` to `"ready"`, `StudioClient` polls `GET /api/projects/[id]` and calls `setConfig()` with the latest `VideoConfig`. React re-renders the Player immediately. Audio files are fetched directly from R2 via presigned URLs.
 
 ### Final Export — Runs in render-worker
 
@@ -162,14 +165,14 @@ sequenceDiagram
 flowchart LR
     AI["Claude generates<br/>VideoConfig JSON"]
     PG[("PostgreSQL<br/>video_configs table")]
-    ZS["Zustand Store<br/>browser state"]
+    SC["StudioClient<br/>useState VideoConfig"]
     RP["Remotion Player<br/>browser preview"]
     RW["renderMedia()<br/>render-worker"]
     MP4["MP4 on R2<br/>download"]
 
     AI --> PG
-    AI --> ZS
-    ZS --> RP
+    PG -->|"GET /api/projects/id<br/>after stream ends"| SC
+    SC -->|"config prop"| RP
     PG --> RW
     RW --> MP4
 ```

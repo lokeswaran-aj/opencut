@@ -66,9 +66,9 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 
 | Package | Version | Purpose |
 |---|---|---|
-| `ai` | `^6.0.134` | AI SDK v6 core — `streamText`, `generateObject`, `tool` |
+| `ai` | `^6.0.134` | AI SDK v6 core — `streamText`, `generateObject`, `tool`, `DefaultChatTransport` |
 | `@ai-sdk/anthropic` | `^3.0.63` | Anthropic provider for AI SDK |
-| `@ai-sdk/react` | (via `ai`) | `useChat` hook for streaming chat UI — bundled with `ai` |
+| `@ai-sdk/react` | `^3.0.136` | `useChat` hook — installed separately (not bundled with `ai` in v6) |
 
 **Models used:**
 
@@ -82,6 +82,11 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 - `stopWhen: stepCountIs(N)` replaces `maxSteps`
 - `toUIMessageStreamResponse()` replaces `toDataStreamResponse()`
 - `message.parts` replaces `message.toolInvocations` for tool call rendering
+- `useChat` no longer returns `input`/`handleInputChange`/`handleSubmit` — manage input state manually
+- Transport config: `new DefaultChatTransport({ api, body })` replaces top-level `api`/`body` options
+- `messages: initialMessages` option (renamed from `initialMessages` in v5)
+- `UIMessage` has no `content` field — `parts` array only
+- Tool invocations stream as `type: "dynamic-tool"` parts for server-side tools
 
 ---
 
@@ -131,40 +136,19 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 
 | Package / Registry | Version | Purpose |
 |---|---|---|
-| `tailwindcss` | `^4.0.0` | CSS utility framework (v4 — CSS-first config via `@theme` in globals.css) |
+| `tailwindcss` | `^4.0.0` | CSS utility framework (v4 — CSS-first via `@import "tailwindcss"` in globals.css) |
 | `shadcn/ui` | components | Accessible UI primitives — `npx shadcn@latest add <component>` |
-| AI Elements | registry | Vercel's AI-native chat components — `npx shadcn@latest add <ai-elements-url>` |
-| `framer-motion` | `^12.0.0` | Animations for tool cards, page transitions |
-| `lucide-react` | `latest` | Icon set |
-| `zustand` | `^5.0.0` | Client state — VideoConfig store, render progress store |
 
-**AI Elements** is Vercel's shadcn-based registry for building AI chat UIs. Components are copied into `src/components/ai-elements/` and fully owned/customizable. Install each component via:
+**Installed shadcn components:** `button`, `textarea`, `scroll-area`, `badge`, `separator`
 
-```bash
-npx shadcn@latest add https://ai-sdk.dev/elements/r/<component-name>.json
-```
+**Chat UI** is built as a custom `ChatPanel` component (`src/components/studio/ChatPanel.tsx`). It uses `useChat` from `@ai-sdk/react` via `StudioClient`, renders `message.parts`, and handles `type: "dynamic-tool"` parts with human-readable tool call indicators (pending spinner → done checkmark).
 
-Components used in Opencut:
+**Planned (not yet installed):**
+- `framer-motion` — animations for tool cards, page transitions
+- `lucide-react` — icon set
+- `zustand` — client state for render progress store
 
-| Component | Path | Used for |
-|---|---|---|
-| `Conversation` | `ai-elements/conversation` | Chat panel scroll container |
-| `ConversationContent` | `ai-elements/conversation` | Message list with auto-scroll |
-| `ConversationEmptyState` | `ai-elements/conversation` | Empty state before first message |
-| `Message` | `ai-elements/message` | User and assistant message bubbles |
-| `MessageContent` | `ai-elements/message` | Message inner content wrapper |
-| `MessageResponse` | `ai-elements/message` | Markdown-rendered text response |
-| `PromptInput` | `ai-elements/prompt-input` | Chat input box container |
-| `PromptInputTextarea` | `ai-elements/prompt-input` | Auto-resize textarea |
-| `PromptInputSubmit` | `ai-elements/prompt-input` | Send button with streaming state |
-| `Loader` | `ai-elements/loader` | Animated dots while Claude is responding |
-| `Sources` | `ai-elements/sources` | Collapsible Firecrawl source links |
-| `Reasoning` | `ai-elements/reasoning` | Collapsible Claude thinking block |
-| `Actions` + `Action` | `ai-elements/actions` | Copy / retry buttons on messages |
-
-Custom tool invocation cards (`SearchCard`, `ScriptCard`, `AudioCard`, etc.) are built as regular shadcn components on top of the `Message` + `MessageContent` structure, rendered from `message.parts` when `part.type` starts with `"tool-"`.
-
-**Tailwind v4 note:** Config is in `app/globals.css` using `@theme` directive, not `tailwind.config.js`.
+**Tailwind v4 note:** Config is via `@import "tailwindcss"` in `app/globals.css`, not `tailwind.config.js`.
 
 ---
 
@@ -336,9 +320,8 @@ PORT=3001
 /sign-up                       Clerk <SignUp /> component
 /dashboard                     Project grid — list, create, delete projects (protected)
 /studio/[projectId]            Main editor (protected)
-  ├─ Left panel:   Chat (useChat + tool invocation cards)
-  ├─ Center:       Remotion <Player> live preview + playback controls
-  └─ Right panel:  Scene list, theme panel, Export button
+  ├─ Left panel:   ChatPanel (useChat + tool invocation cards)
+  └─ Right panel:  VideoPreviewPanel — Remotion <Player> + Export button
 
 /api/chat                      POST — AI streaming endpoint
 /api/projects                  GET / POST (POST checks usage limit)

@@ -75,7 +75,10 @@ Create a new empty project. Checks the user's `user_limits` row before creating 
 **Request body**
 ```json
 {
-  "title": "string"
+  "title": "string",
+  "topic": "string (optional)",
+  "sourceUrl": "string (optional)",
+  "aspectRatio": "9:16 | 16:9 | 1:1 | 4:5 (default: 9:16)"
 }
 ```
 
@@ -103,14 +106,13 @@ Create a new empty project. Checks the user's `user_limits` row before creating 
 
 ### `GET /api/projects/[id]`
 
-Get a single project including its current `VideoConfig`, research report summary, and most recent chat messages (last 50).
+Get a single project including its current `VideoConfig` and full chat message history.
 
 **Response**
 ```json
 {
-  "project": { "id", "title", "status", "topic", "sourceUrl", "createdAt", "updatedAt" },
-  "videoConfig": VideoConfig | null,
-  "researchSummary": "string | null",
+  "project": { "id", "title", "status", "aspectRatio", "topic", "sourceUrl", "createdAt", "updatedAt" },
+  "config": VideoConfig | null,
   "messages": [UIMessage]
 }
 ```
@@ -228,7 +230,7 @@ Clerk handles all authentication. There is no `/api/auth` route in this app. Cle
 
 Google OAuth is configured entirely inside the Clerk dashboard — no client ID/secret needed in app environment variables.
 
-`proxy.ts` (Next.js 16 replaces `proxy.ts`):
+`proxy.ts` (Next.js 16 replacement for `middleware.ts`):
 
 ```typescript
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
