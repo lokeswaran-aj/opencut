@@ -142,15 +142,38 @@ docker run -p 8787:8787 \
 
 ---
 
-## Database
+## Database — Neon
 
-The database must be reachable from both Vercel (serverless) and the Coolify server.
+[Neon](https://neon.tech) is a serverless Postgres platform with a generous free tier (0.5 GB storage, unlimited projects).
 
-Options:
-- **Neon** (serverless Postgres, generous free tier) — works from Vercel edge
-- **Supabase** (free tier, hosted Postgres) — works from both
-- **Self-hosted on Coolify** — create a Postgres service in Coolify and use the internal network URL for the worker, and the public URL for Vercel
+### Why Neon works well here
 
-If using a self-hosted Postgres on Coolify, create two `DATABASE_URL` values:
-- Vercel: use the **public** connection string (with SSL)
-- Worker: use the **internal** Coolify network URL (faster, no SSL needed)
+The web app (`apps/web`) uses **`@neondatabase/serverless`** — Neon's HTTP driver. Instead of opening a TCP connection per request (which exhausts Postgres connection limits in Vercel serverless), queries go over HTTPS. There is no connection pool to manage.
+
+The render worker (`apps/render-worker`) is a long-running Bun process, so it keeps its standard `postgres.js` TCP driver as-is.
+
+### Setup
+
+1. Sign up at [console.neon.tech](https://console.neon.tech) and create a project.
+2. From the **Connection Details** panel, select **"Direct connection"** and copy the URL:
+   ```
+   postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require
+   ```
+3. Set this as `DATABASE_URL` in:
+   - Vercel environment variables (for `apps/web`)
+   - Coolify environment variables (for `apps/render-worker`)
+4. Run the schema push once to create tables:
+   ```bash
+   cd apps/web
+   dotenv -e .env.local -- drizzle-kit push
+   ```
+   Or via the pnpm script from the repo root:
+   ```bash
+   pnpm --filter web db:push
+   ```
+
+### Notes
+
+- Do **not** use the "Pooled connection" string — the app's HTTP driver doesn't need it and the `?pgbouncer=true` flag causes issues with Drizzle's schema push.
+- Neon auto-suspends the compute after 5 minutes of inactivity (free tier). The first query after a cold start adds ~100–500 ms. This is fine for this app.
+- Neon branches (like git branches for your database) are useful for staging environments.
