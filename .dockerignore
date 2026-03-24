@@ -1,0 +1,23 @@
+# Git
+.git
+.gitignore
+
+# Secrets — never bake into image
+**/.env.local
+**/.env
+
+# node_modules — always reinstalled inside the container for the correct platform
+**/node_modules
+
+# Next.js build output
+apps/web/.next
+apps/web/out
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Editor
+.cursor
+.vscode
+*.md
