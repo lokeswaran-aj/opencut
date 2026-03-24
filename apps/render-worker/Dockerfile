@@ -49,12 +49,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxtst6 \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Node.js (required by pnpm for engine checks) ─────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 # ── Bun ──────────────────────────────────────────────────────────────────────
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:$PATH"
 
 # ── pnpm ─────────────────────────────────────────────────────────────────────
-# Bun ships with npm; use it to bootstrap pnpm
 RUN curl -fsSL https://get.pnpm.io/install.sh | ENV='' PROFILE=/dev/null bash
 ENV PATH="/root/.local/share/pnpm:$PATH"
 
