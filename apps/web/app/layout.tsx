@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from "next/font/google"
 import { ClerkProvider } from "@clerk/nextjs"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
+import { ClarityScript } from "./components/clarity-script"
 import "./globals.css"
 
 const inter = Inter({
@@ -27,6 +28,7 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} dark`}>
         <body className="bg-background text-foreground antialiased" suppressHydrationWarning>
+          <ClarityScript />
           <TooltipProvider>{children}</TooltipProvider>
           <Toaster richColors position="bottom-right" />
         </body>
