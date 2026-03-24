@@ -21,6 +21,11 @@ export function HomeChat() {
   const { isSignedIn, isLoaded } = useUser()
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   async function submit(text: string) {
     const trimmed = text.trim()
@@ -68,6 +73,10 @@ export function HomeChat() {
   }, [isLoaded, isSignedIn])
 
   const status = isSubmitting ? "submitted" : "ready"
+  // Disable until both the component has mounted on the client AND Clerk has
+  // resolved the session. Using `mounted` prevents server/client hydration
+  // mismatch caused by Clerk's isLoaded differing between SSR and first paint.
+  const isDisabled = !mounted || isSubmitting || !isLoaded
 
   return (
     <div className="w-full max-w-2xl mx-auto flex flex-col gap-3">
@@ -77,7 +86,7 @@ export function HomeChat() {
       >
         <PromptInputTextarea
           placeholder="What topic do you want to generate a video about today?"
-          disabled={isSubmitting || !isLoaded}
+          disabled={isDisabled}
           autoFocus
           className="min-h-[56px] text-sm"
         />
@@ -85,7 +94,7 @@ export function HomeChat() {
           <span className="text-xs text-muted-foreground/60">⌘↵</span>
           <PromptInputSubmit
             status={status}
-            disabled={isSubmitting || !isLoaded}
+            disabled={isDisabled}
           />
         </PromptInputFooter>
       </PromptInput>
@@ -96,7 +105,7 @@ export function HomeChat() {
           <button
             key={ex}
             type="button"
-            disabled={isSubmitting || !isLoaded}
+            disabled={isDisabled}
             onClick={() => submit(ex)}
             className="text-xs text-muted-foreground hover:text-foreground border border-border rounded-full px-3 py-1.5 transition-colors hover:border-foreground/30 disabled:opacity-40"
           >
