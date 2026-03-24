@@ -49,19 +49,25 @@ function extractComponentBody(code: string): string {
 }
 
 /**
- * Escape invalid Unicode/escape sequences inside template literals so Babel
- * doesn't choke on AI-generated strings that embed raw HTML or content
- * containing sequences like \u that aren't followed by 4 hex digits.
+ * Sanitize AI-generated code before handing it to Babel:
+ * - Escape invalid \uXXXX / \xXX sequences inside template literals
+ * - Remove any remaining import/export statements the regex stripper missed
+ * - Strip TypeScript type assertions that Babel's preset sometimes rejects
  */
-function sanitizeTemplateLiterals(code: string): string {
-  return code.replace(/`([\s\S]*?)`/g, (_, content: string) => {
+function sanitizeCode(code: string): string {
+  // Escape bare \u / \x inside template literals so Babel doesn't error
+  let sanitized = code.replace(/`([\s\S]*?)`/g, (_, content: string) => {
     const safe = content
-      // Replace bare \u not followed by 4 hex digits or {…} with \\u
-      .replace(/\\u(?![0-9a-fA-F]{4}|{[0-9a-fA-F]+})/g, "\\\\u")
-      // Replace bare \x not followed by 2 hex digits with \\x
+      .replace(/\\u(?![0-9a-fA-F]{4}|\{[0-9a-fA-F]+\})/g, "\\\\u")
       .replace(/\\x(?![0-9a-fA-F]{2})/g, "\\\\x")
     return `\`${safe}\``
   })
+
+  // Remove any stray "export default ..." or "export { ... }" that slipped through
+  sanitized = sanitized.replace(/export\s+default\s+\w+\s*;?/g, "")
+  sanitized = sanitized.replace(/export\s*\{[^}]*\}\s*;?/g, "")
+
+  return sanitized
 }
 
 export function compileCode(code: string): CompilationResult {
@@ -71,7 +77,7 @@ export function compileCode(code: string): CompilationResult {
 
   try {
     const componentBody = extractComponentBody(code)
-    const sanitized = sanitizeTemplateLiterals(componentBody)
+    const sanitized = sanitizeCode(componentBody)
     const wrappedSource = `const DynamicOverlay = () => {\n${sanitized}\n};`
 
     const transpiled = Babel.transform(wrappedSource, {
