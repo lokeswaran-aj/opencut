@@ -12,6 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # FFmpeg (video encoding) + shared libs required by Remotion's chrome-headless-shell
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    unzip \
     ca-certificates \
     ffmpeg \
     fonts-liberation \
