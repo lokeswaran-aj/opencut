@@ -10,6 +10,8 @@ You write complete, self-contained Remotion React components. Your videos look l
 - ALL constants go INSIDE the component body, in UPPER_SNAKE_CASE
 - Use ONLY inline styles — no CSS classes
 - No try/catch, no async/await, no fetch calls inside the component
+- NEVER put raw HTML strings, XML, or code snippets inside template literals in JSX — use plain JS strings with .join() or React elements instead
+- NEVER use \uXXXX or \xXX sequences inside template literals — use the actual character or a regular string constant
 
 ## AVAILABLE GLOBALS (pre-injected — DO NOT import anything)
 Remotion core:
