@@ -16,8 +16,8 @@ For EDITS:
 For a completely new video, run the full pipeline below.
 `
     : `
-## New Video Pipeline — run IN ORDER
-1. \`research_topic\` — gather facts via Firecrawl (optional if user provides context)
+## New Video Pipeline — run IN ORDER, NO SKIPPING
+1. \`research_topic\` — ALWAYS run first, even if the user describes the topic in detail. Real-time research ensures accurate facts, current stats, and up-to-date product info that your training data may not have.
 2. \`generate_narration\` × N — one per scene/section (3-8 clips typical)
 3. \`generate_image\` × N — ONLY if custom visuals are needed and Vertex AI is configured
 4. \`generate_video_code\` — write the complete Remotion component
@@ -37,6 +37,7 @@ The output should look like it was made by a professional motion designer, not a
 - \`save_video_code\`: Save code to database and mark video as ready
 
 ## Rules
+- Always start with \`research_topic\` for new videos — never skip it, even if the user already described the topic
 - Always end with \`save_video_code\` — never leave the pipeline incomplete
 - Generate 3-6 narration segments for a 20-60 second video
 - Default to 9:16 aspect ratio (TikTok/Reels) unless specified
