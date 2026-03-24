@@ -77,14 +77,6 @@ export function VideoPreviewPanel({
   const [exportState, setExportState] = useState<ExportState>({ type: "idle" })
 
   const aspectRatio = config?.aspectRatio ?? "9:16"
-  const dimensionClass =
-    aspectRatio === "9:16"
-      ? "aspect-[9/16] h-[600px]"
-      : aspectRatio === "16:9"
-        ? "aspect-video w-full max-w-3xl"
-        : aspectRatio === "1:1"
-          ? "aspect-square h-[480px]"
-          : "aspect-[4/5] h-[560px]"
 
   // The download URL always routes through our Next.js proxy to avoid CORS issues
   const downloadUrl = `/api/projects/${projectId}/download`
@@ -189,7 +181,7 @@ export function VideoPreviewPanel({
         : null
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-neutral-925">
+    <div className="flex w-full h-full flex-col overflow-hidden bg-neutral-925">
       <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-3">
         <p className="text-xs font-medium text-neutral-400 uppercase tracking-wider">
           Preview
@@ -257,14 +249,18 @@ export function VideoPreviewPanel({
         </div>
       </div>
 
-      <div className="flex flex-1 items-center justify-center overflow-auto p-8">
+      <div className="relative flex-1 min-h-0 overflow-hidden">
         {config ? (
-          <VideoPlayer
-            config={config}
-            className={`${dimensionClass} overflow-hidden rounded-xl shadow-2xl ring-1 ring-neutral-700`}
-          />
+          // Fill the available space with a small inset for padding.
+          // Remotion Player scales the composition to fit via transform:scale internally,
+          // so it correctly letterboxes/pillarboxes for any container shape.
+          <div className="absolute inset-3 overflow-hidden rounded-xl shadow-2xl ring-1 ring-neutral-700">
+            <VideoPlayer config={config} className="w-full h-full" />
+          </div>
         ) : (
-          <EmptyState isGenerating={isGenerating} />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <EmptyState isGenerating={isGenerating} />
+          </div>
         )}
       </div>
     </div>

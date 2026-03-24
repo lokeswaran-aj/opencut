@@ -99,6 +99,12 @@ export function StudioClient({
   }, [status, project.id])
 
   const isStreaming = status === "streaming" || status === "submitted"
+  const hasVideo = config !== null
+
+  const videoAspectRatioCss =
+    config?.aspectRatio === "16:9" ? "16/9" :
+    config?.aspectRatio === "1:1"  ? "1/1"  :
+    config?.aspectRatio === "4:5"  ? "4/5"  : "9/16"
 
   return (
     <div className="flex h-screen flex-col bg-neutral-950 text-white overflow-hidden">
@@ -127,19 +133,66 @@ export function StudioClient({
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        <ChatPanel
-          messages={messages}
-          onSend={(text) => sendMessage({ text })}
-          isStreaming={isStreaming}
-          error={error}
-        />
-        <VideoPreviewPanel
-          config={config}
-          projectId={project.id}
-          isGenerating={isStreaming}
-        />
-      </div>
+      {hasVideo ? (
+        // Split layout — two modes depending on video orientation
+        <div className="flex flex-1 overflow-hidden">
+          {config?.aspectRatio === "16:9" ? (
+            // Landscape: percentage split — chat 30%, video 70%
+            <>
+              <div className="w-[30%] shrink-0 border-r border-neutral-800 flex flex-col animate-in slide-in-from-left-2 fade-in duration-400">
+                <ChatPanel
+                  messages={messages}
+                  onSend={(text) => sendMessage({ text })}
+                  isStreaming={isStreaming}
+                  error={error}
+                />
+              </div>
+              <div className="flex-1 min-w-0 flex flex-col animate-in slide-in-from-right-4 fade-in duration-500">
+                <VideoPreviewPanel
+                  config={config}
+                  projectId={project.id}
+                  isGenerating={isStreaming}
+                />
+              </div>
+            </>
+          ) : (
+            // Portrait / square: chat fills remaining space, video panel width = height × ratio
+            <>
+              <div className="flex-1 min-w-[280px] border-r border-neutral-800 flex flex-col animate-in slide-in-from-left-2 fade-in duration-400">
+                <ChatPanel
+                  messages={messages}
+                  onSend={(text) => sendMessage({ text })}
+                  isStreaming={isStreaming}
+                  error={error}
+                />
+              </div>
+              <div
+                className="shrink-0 h-full flex flex-col animate-in slide-in-from-right-4 fade-in duration-500"
+                style={{ aspectRatio: videoAspectRatioCss }}
+              >
+                <VideoPreviewPanel
+                  config={config}
+                  projectId={project.id}
+                  isGenerating={isStreaming}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        // Full-width centered chat — no video yet
+        <div className="flex flex-1 items-center justify-center overflow-hidden px-4 py-6">
+          <div className="w-full max-w-2xl h-full flex flex-col">
+            <ChatPanel
+              messages={messages}
+              onSend={(text) => sendMessage({ text })}
+              isStreaming={isStreaming}
+              error={error}
+              hideHeader
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

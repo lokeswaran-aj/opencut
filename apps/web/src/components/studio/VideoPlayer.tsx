@@ -35,6 +35,7 @@ export function VideoPlayer({ config, className }: VideoPlayerProps) {
         style={{ width: "100%", height: "100%" }}
         controls
         loop
+        autoPlay
         bufferStateDelayInMilliseconds={1500}
       />
     </div>

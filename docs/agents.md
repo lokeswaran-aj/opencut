@@ -16,14 +16,15 @@ research_topic → generate_narration (×N) → generate_image (optional, ×M) �
 
 All models are Google Vertex AI (Gemini). Provider and model names are configurable via environment variables.
 
-| Use case | Model | Env var |
-|---|---|---|
-| Code generation, complex reasoning | `gemini-3.1-pro-preview-05-06` | `AI_GENERATION_MODEL` |
-| Lightweight edits | `gemini-3.1-flash-lite-preview-05-06` | `AI_EDIT_MODEL` |
+| Use case                           | Model                           | Env var               |
+| ---------------------------------- | ------------------------------- | --------------------- |
+| Code generation, complex reasoning | `gemini-3.1-pro-preview`        | `AI_GENERATION_MODEL` |
+| Lightweight edits                  | `gemini-3.1-flash-lite-preview` | `AI_EDIT_MODEL`       |
 
 Model helpers live in `src/lib/ai/model.ts` and export `getGenerationModel()` and `getEditModel()`.
 
 **Google Vertex AI credentials** — choose one:
+
 - **Local dev**: set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`
 - **Deployment**: set `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY` extracted from the service account JSON
 
@@ -97,16 +98,18 @@ research_topic: tool({
     input: z.string().describe("A URL (https://...) or a topic/keyword string"),
   }),
   execute: async ({ input }) => {
-    const isUrl = input.startsWith("http")
+    const isUrl = input.startsWith("http");
     if (isUrl) {
       // firecrawl.scrape(input, { formats: ["markdown"] })
     } else {
       // firecrawl.search(input, { limit: 5, scrapeOptions: { formats: ["markdown"] } })
     }
-    await db.insert(researchReports).values({ projectId, content, summary, sources })
-    return { content, summary, sources }
+    await db
+      .insert(researchReports)
+      .values({ projectId, content, summary, sources });
+    return { content, summary, sources };
   },
-})
+});
 ```
 
 ---
@@ -149,7 +152,9 @@ Optional tool — the AI decides whether to call it based on the topic. Generate
 ```typescript
 generate_image: tool({
   inputSchema: z.object({
-    prompt: z.string().describe("Detailed description of the image to generate"),
+    prompt: z
+      .string()
+      .describe("Detailed description of the image to generate"),
     imageId: z.string().describe("Unique ID e.g. 'img-1'"),
   }),
   execute: async ({ prompt, imageId }) => {
@@ -157,14 +162,17 @@ generate_image: tool({
       model: vertex.image("imagen-3.0-generate-001"),
       prompt,
       aspectRatio: toImagenAspectRatio(projectAspectRatio),
-    })
-    const publicUrl = await uploadToR2(`images/${projectId}/${imageId}.png`, image.uint8Array)
+    });
+    const publicUrl = await uploadToR2(
+      `images/${projectId}/${imageId}.png`,
+      image.uint8Array,
+    );
 
-    const asset: ImageAsset = { id: imageId, url: publicUrl }
-    imageAssets.push(asset)  // stored in closure for generate_video_code
-    return asset
+    const asset: ImageAsset = { id: imageId, url: publicUrl };
+    imageAssets.push(asset); // stored in closure for generate_video_code
+    return asset;
   },
-})
+});
 ```
 
 ---
@@ -180,23 +188,32 @@ generate_video_code: tool({
     researchSummary: z.string(),
   }),
   execute: async ({ topic, researchSummary }) => {
-    const totalDurationInFrames = audioAssets.reduce((sum, a) => sum + a.durationInFrames, 0)
+    const totalDurationInFrames = audioAssets.reduce(
+      (sum, a) => sum + a.durationInFrames,
+      0,
+    );
     const prompt = buildCodeGenerationPrompt({
-      topic, researchSummary,
+      topic,
+      researchSummary,
       aspectRatio: projectAspectRatio,
       durationInFrames: totalDurationInFrames,
       fps: 30,
-      audioAssets,   // all AudioAssets accumulated so far
-      imageAssets,   // all ImageAssets accumulated so far (may be empty)
-    })
+      audioAssets, // all AudioAssets accumulated so far
+      imageAssets, // all ImageAssets accumulated so far (may be empty)
+    });
     const { text: code } = await generateText({
       model: getGenerationModel(),
       system: REMOTION_SYSTEM_PROMPT,
       prompt,
-    })
-    return { code, durationInFrames: totalDurationInFrames, fps: 30, title: topic }
+    });
+    return {
+      code,
+      durationInFrames: totalDurationInFrames,
+      fps: 30,
+      title: topic,
+    };
   },
-})
+});
 ```
 
 ---
@@ -222,12 +239,17 @@ save_video_code: tool({
       fps,
       durationInFrames,
       code,
-    }
-    await db.insert(videoConfigs).values({ projectId, config, version: nextVersion })
-    await db.update(projects).set({ status: "ready" }).where(eq(projects.id, projectId))
-    return { success: true, config }
+    };
+    await db
+      .insert(videoConfigs)
+      .values({ projectId, config, version: nextVersion });
+    await db
+      .update(projects)
+      .set({ status: "ready" })
+      .where(eq(projects.id, projectId));
+    return { success: true, config };
   },
-})
+});
 ```
 
 ---
@@ -239,6 +261,7 @@ The code generation prompt lives in `src/lib/ai/remotion-prompt.ts` and has two 
 ### `REMOTION_SYSTEM_PROMPT`
 
 System-level instructions that define the AI's role and hard rules for every generated component:
+
 - Output only code — no markdown, no explanations
 - Response must start with `export const VideoContent = () => {`
 - All constants go inside the component body in `UPPER_SNAKE_CASE`
@@ -253,6 +276,7 @@ System-level instructions that define the AI's role and hard rules for every gen
 ### `buildCodeGenerationPrompt(params)`
 
 Constructs the per-request user prompt with:
+
 - Topic and platform hint (TikTok vs YouTube based on aspect ratio)
 - Canvas dimensions
 - Total duration in frames
@@ -266,6 +290,7 @@ Constructs the per-request user prompt with:
 ## System Prompt
 
 Built dynamically per request in `src/lib/ai/system-prompt.ts`. Provides:
+
 1. Ordered pipeline instructions (research → narration → image → code → save)
 2. Segment count rules (2–5 narration segments, total ≤ 60 s)
 3. Aspect ratio default (`9:16` unless user specifies)
@@ -279,13 +304,13 @@ The chat panel lives at `src/components/studio/ChatPanel.tsx`. It uses `useChat`
 
 ### Tool call labels
 
-| Tool | Pending label | Done label |
-|---|---|---|
-| `research_topic` | Researching topic… | Research complete |
-| `generate_narration` | Generating narration… | Narration ready |
-| `generate_image` | Generating image… | Image ready |
-| `generate_video_code` | Writing video code… | Code generated |
-| `save_video_code` | Saving video… | Video saved |
+| Tool                  | Pending label         | Done label        |
+| --------------------- | --------------------- | ----------------- |
+| `research_topic`      | Researching topic…    | Research complete |
+| `generate_narration`  | Generating narration… | Narration ready   |
+| `generate_image`      | Generating image…     | Image ready       |
+| `generate_video_code` | Writing video code…   | Code generated    |
+| `save_video_code`     | Saving video…         | Video saved       |
 
 ### StudioClient wiring
 

@@ -1,7 +1,7 @@
 "use client"
 
 import type { UIMessage } from "ai"
-import { MessageSquare } from "lucide-react"
+import { MessageSquare, Search, Mic, Image, Code2, Save } from "lucide-react"
 import {
   Conversation,
   ConversationContent,
@@ -16,28 +16,110 @@ import {
   PromptInputSubmit,
 } from "@/components/ai-elements/prompt-input"
 
-const TOOL_LABELS: Record<string, { pending: string; done: string }> = {
-  research_topic: { pending: "Researching topic…", done: "Research complete" },
-  generate_narration: { pending: "Generating narration…", done: "Audio ready" },
-  generate_image: { pending: "Generating image…", done: "Image ready" },
-  generate_video_code: { pending: "Writing Remotion component…", done: "Code generated" },
-  save_video_code: { pending: "Saving video…", done: "Video ready" },
+type ToolInput = Record<string, unknown>
+
+interface ToolMeta {
+  icon: React.ReactNode
+  pendingLabel: string
+  doneLabel: string
+  detail: (input: ToolInput, isDone: boolean) => string | null
 }
 
-function ToolCallBubble({ toolName, isDone }: { toolName: string; isDone: boolean }) {
-  const labels = TOOL_LABELS[toolName] ?? { pending: `Running ${toolName}…`, done: toolName }
+const TOOL_META: Record<string, ToolMeta> = {
+  research_topic: {
+    icon: <Search className="size-3" />,
+    pendingLabel: "Researching…",
+    doneLabel: "Research complete",
+    detail: (input) => {
+      const raw = (input.input as string | undefined) ?? ""
+      if (!raw) return null
+      const label = raw.startsWith("http") ? new URL(raw).hostname : raw
+      return truncate(label, 60)
+    },
+  },
+  generate_narration: {
+    icon: <Mic className="size-3" />,
+    pendingLabel: "Generating narration…",
+    doneLabel: "Narration ready",
+    detail: (input) => {
+      const text = (input.text as string | undefined) ?? ""
+      return text ? `"${truncate(text, 80)}"` : null
+    },
+  },
+  generate_image: {
+    icon: <Image className="size-3" />,
+    pendingLabel: "Generating image…",
+    doneLabel: "Image ready",
+    detail: (input) => {
+      const prompt = (input.prompt as string | undefined) ?? ""
+      return prompt ? truncate(prompt, 72) : null
+    },
+  },
+  generate_video_code: {
+    icon: <Code2 className="size-3" />,
+    pendingLabel: "Writing Remotion component…",
+    doneLabel: "Component generated",
+    detail: () => "Compiling audio + image assets into a full Remotion composition",
+  },
+  save_video_code: {
+    icon: <Save className="size-3" />,
+    pendingLabel: "Saving video…",
+    doneLabel: "Video saved",
+    detail: () => null,
+  },
+}
+
+function truncate(str: string, max: number) {
+  return str.length > max ? str.slice(0, max) + "…" : str
+}
+
+function ToolCallBubble({
+  toolName,
+  isDone,
+  input,
+}: {
+  toolName: string
+  isDone: boolean
+  input: ToolInput
+}) {
+  const meta = TOOL_META[toolName]
+  const label = meta
+    ? isDone ? meta.doneLabel : meta.pendingLabel
+    : isDone ? toolName : `Running ${toolName}…`
+  const detail = meta?.detail(input, isDone) ?? null
+  const icon = meta?.icon ?? null
+
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs my-1">
-      {isDone ? (
-        <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
-          ✓
-        </span>
-      ) : (
-        <span className="size-3 shrink-0 rounded-full border border-amber-400 border-t-transparent animate-spin" />
-      )}
-      <span className={isDone ? "text-muted-foreground" : "text-amber-400"}>
-        {isDone ? labels.done : labels.pending}
-      </span>
+    <div className="flex items-start gap-2.5 rounded-lg bg-muted/40 border border-border/40 px-3 py-2.5 text-xs my-1">
+      {/* Status indicator */}
+      <div className="mt-0.5 shrink-0">
+        {isDone ? (
+          <span className="flex size-4 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+            ✓
+          </span>
+        ) : (
+          <span className="size-3 mt-0.5 rounded-full border border-amber-400 border-t-transparent animate-spin block" />
+        )}
+      </div>
+
+      <div className="flex flex-col gap-0.5 min-w-0">
+        {/* Tool name + label row */}
+        <div className="flex items-center gap-1.5">
+          <span className={isDone ? "text-muted-foreground/60" : "text-amber-400/70"}>
+            {icon}
+          </span>
+          <span className={`font-medium ${isDone ? "text-muted-foreground" : "text-amber-400"}`}>
+            {label}
+          </span>
+        </div>
+
+        {/* Contextual detail line */}
+        {detail && (
+          <p className="text-muted-foreground/50 leading-snug wrap-break-word">
+            {detail}
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -64,20 +146,31 @@ function MessageParts({
         }
 
         if (part.type === "dynamic-tool") {
-          const p = part as { type: "dynamic-tool"; toolName: string; state: string }
-          // Only use live state for the actively-streaming message; otherwise always done
+          const p = part as {
+            type: "dynamic-tool"
+            toolName: string
+            state: string
+            input?: ToolInput
+          }
           const isDone = !isLiveMessage || p.state === "output-available"
           return (
-            <ToolCallBubble key={i} toolName={p.toolName} isDone={isDone} />
+            <ToolCallBubble
+              key={i}
+              toolName={p.toolName}
+              isDone={isDone}
+              input={p.input ?? {}}
+            />
           )
         }
 
         // Fallback for any legacy "tool-{name}" typed parts
         if (typeof part.type === "string" && part.type.startsWith("tool-") && part.type !== "tool-call") {
           const toolName = part.type.slice(5)
-          const p = part as { type: string; state?: string }
+          const p = part as { type: string; state?: string; input?: ToolInput }
           const isDone = !isLiveMessage || p.state === "output-available"
-          return <ToolCallBubble key={i} toolName={toolName} isDone={isDone} />
+          return (
+            <ToolCallBubble key={i} toolName={toolName} isDone={isDone} input={p.input ?? {}} />
+          )
         }
 
         return null
@@ -91,18 +184,21 @@ interface ChatPanelProps {
   onSend: (text: string) => void
   isStreaming: boolean
   error?: Error
+  hideHeader?: boolean
 }
 
-export function ChatPanel({ messages, onSend, isStreaming, error }: ChatPanelProps) {
+export function ChatPanel({ messages, onSend, isStreaming, error, hideHeader }: ChatPanelProps) {
   const status = isStreaming ? "streaming" : "ready"
 
   return (
-    <div className="flex w-[400px] shrink-0 flex-col border-r border-border bg-background">
-      <div className="border-b border-border px-4 py-3">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Chat
-        </p>
-      </div>
+    <div className="flex w-full h-full flex-col bg-background">
+      {!hideHeader && (
+        <div className="border-b border-border px-4 py-3">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Chat
+          </p>
+        </div>
+      )}
 
       <Conversation className="flex-1 min-h-0">
         <ConversationContent>
