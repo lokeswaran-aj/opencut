@@ -11,7 +11,14 @@ import { makeTools } from "@/lib/ai/tools"
 import { buildSystemPrompt } from "@/lib/ai/system-prompt"
 import type { VideoConfig } from "@repo/types"
 
+const log = (tag: string, msg: string, data?: Record<string, unknown>) => {
+  const ts = new Date().toISOString()
+  const extra = data ? ` ${JSON.stringify(data)}` : ""
+  console.log(`[chat][${tag}] ${ts} ${msg}${extra}`)
+}
+
 export async function POST(req: Request) {
+  const reqStart = Date.now()
   let userId: string
   try {
     userId = await requireAuth()
@@ -25,6 +32,8 @@ export async function POST(req: Request) {
   if (!projectId) {
     return NextResponse.json({ error: "projectId is required" }, { status: 400 })
   }
+
+  log("request", "incoming", { projectId, userId, messageCount: messages.length })
 
   // Verify project ownership
   const [project] = await db
@@ -59,6 +68,8 @@ export async function POST(req: Request) {
   const isEdit = existingConfig !== null && messages.length > 2
   const model = isEdit ? getEditModel() : getGenerationModel()
 
+  log("stream", "starting", { projectId, isEdit, model: isEdit ? "edit" : "generation" })
+
   // Mark project as actively generating BEFORE streaming starts so the UI
   // can show the loading state. save_timeline will set it back to "ready"
   // when done. We must NOT touch the status inside onFinish (it runs after
@@ -75,7 +86,32 @@ export async function POST(req: Request) {
     tools: makeTools(projectId),
     // research + plan + (image + audio) × 8 scenes + style + save = ~20 steps max
     stopWhen: stepCountIs(25),
-    onFinish: async ({ response }) => {
+    onStepStart: ({ stepType, toolCalls }) => {
+      if (stepType === "tool-result" && toolCalls?.length) {
+        for (const tc of toolCalls) {
+          log("tool:start", tc.toolName, { projectId, toolCallId: tc.toolCallId })
+        }
+      }
+    },
+    onStepFinish: ({ stepType, toolResults, usage }) => {
+      if (stepType === "tool-result" && toolResults?.length) {
+        for (const tr of toolResults) {
+          log("tool:done", tr.toolName, {
+            projectId,
+            toolCallId: tr.toolCallId,
+            tokens: usage?.totalTokens,
+          })
+        }
+      }
+    },
+    onFinish: async ({ response, usage, finishReason }) => {
+      log("stream", "finished", {
+        projectId,
+        finishReason,
+        totalTokens: usage?.totalTokens,
+        elapsedMs: Date.now() - reqStart,
+      })
+
       // Persist the new user message
       if (lastUserMessage) {
         await db.insert(chatMessages).values({
@@ -125,6 +161,8 @@ export async function POST(req: Request) {
           parts: uiParts,
         })
       }
+
+      log("persist", "messages saved", { projectId })
       // NOTE: do NOT update project status here — save_timeline already
       // set it to "ready", and touching it again would overwrite that.
     },

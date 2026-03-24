@@ -17,25 +17,42 @@ const REMOTION_ENTRY = path.resolve(
 // Bundle cache — reuse across requests in the same process
 let bundleCache: string | null = null
 
-async function getBundle(): Promise<string> {
-  if (bundleCache) return bundleCache
+function renderLog(tag: string, msg: string, data?: Record<string, unknown>) {
+  const ts = new Date().toISOString()
+  const extra = data ? ` ${JSON.stringify(data)}` : ""
+  console.log(`[render][${tag}] ${ts} ${msg}${extra}`)
+}
+function renderError(tag: string, msg: string, err: unknown) {
+  const detail = err instanceof Error ? err.stack ?? err.message : String(err)
+  console.error(`[render][${tag}] ERROR ${new Date().toISOString()} ${msg}\n${detail}`)
+}
 
-  console.log("[render] Bundling Remotion composition…")
-  bundleCache = await bundle({
-    entryPoint: REMOTION_ENTRY,
-    // Allow webpack to resolve workspace packages from the monorepo root
-    webpackOverride: (config) => {
-      config.resolve ??= {}
-      config.resolve.modules = [
-        ...(config.resolve.modules ?? ["node_modules"]),
-        path.resolve(import.meta.dir, "../../../node_modules"),
-        path.resolve(import.meta.dir, "../../web/node_modules"),
-      ]
-      return config
-    },
-  })
-  console.log("[render] Bundle ready:", bundleCache)
-  return bundleCache
+async function getBundle(): Promise<string> {
+  if (bundleCache) {
+    renderLog("bundle", "using cached bundle", { path: bundleCache })
+    return bundleCache
+  }
+
+  renderLog("bundle", "starting Remotion bundle", { entryPoint: REMOTION_ENTRY })
+  try {
+    bundleCache = await bundle({
+      entryPoint: REMOTION_ENTRY,
+      webpackOverride: (config) => {
+        config.resolve ??= {}
+        config.resolve.modules = [
+          ...(config.resolve.modules ?? ["node_modules"]),
+          path.resolve(import.meta.dir, "../../../node_modules"),
+          path.resolve(import.meta.dir, "../../web/node_modules"),
+        ]
+        return config
+      },
+    })
+    renderLog("bundle", "bundle ready", { path: bundleCache })
+    return bundleCache
+  } catch (err) {
+    renderError("bundle", "Remotion bundle failed", err)
+    throw err
+  }
 }
 
 async function setJobStage(
@@ -50,11 +67,17 @@ async function setJobStage(
 }
 
 export async function runRenderJob(jobId: string): Promise<void> {
-  // Mark job as started
-  await db
-    .update(renderJobs)
-    .set({ status: "bundling", startedAt: new Date(), progress: 5, stage: "Bundling composition" })
-    .where(eq(renderJobs.id, jobId))
+  renderLog("job", "starting render job", { jobId })
+
+  try {
+    await db
+      .update(renderJobs)
+      .set({ status: "bundling", startedAt: new Date(), progress: 5, stage: "Bundling composition" })
+      .where(eq(renderJobs.id, jobId))
+  } catch (err) {
+    renderError("job", `failed to mark job as started — jobId="${jobId}"`, err)
+    throw err
+  }
 
   const [job] = await db
     .select()
@@ -62,12 +85,14 @@ export async function runRenderJob(jobId: string): Promise<void> {
     .where(eq(renderJobs.id, jobId))
     .limit(1)
 
-  if (!job) throw new Error(`Job ${jobId} not found`)
+  if (!job) throw new Error(`Job ${jobId} not found in database`)
 
   const projectId = job.projectId
+  const jobStart = Date.now()
 
   try {
     // 1. Load the latest VideoConfig for this project
+    renderLog("job", "loading video config from DB", { jobId, projectId })
     const [latestConfig] = await db
       .select()
       .from(videoConfigs)
@@ -75,49 +100,70 @@ export async function runRenderJob(jobId: string): Promise<void> {
       .orderBy(desc(videoConfigs.createdAt))
       .limit(1)
 
-    if (!latestConfig) throw new Error("No video config found for project")
+    if (!latestConfig) throw new Error(`No video config found for project "${projectId}"`)
     const config = latestConfig.config as VideoConfig
+    renderLog("job", "video config loaded", { jobId, projectId, durationInFrames: config.durationInFrames, fps: config.fps })
 
     // 2. Bundle the Remotion composition (cached after first call)
     const bundled = await getBundle()
 
     // 3. Select the composition with our config as input props
-    // calculateMetadata in apps/web/src/remotion/index.tsx reads config.durationInFrames
     await setJobStage(jobId, "Selecting composition", 20)
-    const composition = await selectComposition({
-      serveUrl: bundled,
-      id: "VideoComposition",
-      inputProps: config,
-      // Override duration so selectComposition doesn't default to placeholder value
-      timeoutInMilliseconds: 30000,
-    })
+    renderLog("job", "selecting Remotion composition", { jobId })
+    let composition
+    try {
+      composition = await selectComposition({
+        serveUrl: bundled,
+        id: "VideoComposition",
+        inputProps: config,
+        timeoutInMilliseconds: 30000,
+      })
+      renderLog("job", "composition selected", { jobId, durationInFrames: composition.durationInFrames })
+    } catch (err) {
+      renderError("job", `selectComposition failed — jobId="${jobId}"`, err)
+      throw err
+    }
 
     // 4. Render to a temp file
     await setJobStage(jobId, "Rendering video", 30)
     const tmpDir = os.tmpdir()
     const outFile = path.join(tmpDir, `${jobId}.mp4`)
+    renderLog("job", "starting renderMedia", { jobId, outFile })
 
-    await renderMedia({
-      composition,
-      serveUrl: bundled,
-      codec: "h264",
-      outputLocation: outFile,
-      inputProps: config,
-      onProgress: async ({ progress: p }) => {
-        // Map 0–1 render progress to 30–85 overall progress
-        const pct = 30 + Math.round(p * 55)
-        await db
-          .update(renderJobs)
-          .set({ progress: pct, stage: `Rendering ${Math.round(p * 100)}%` })
-          .where(eq(renderJobs.id, jobId))
-      },
-    })
+    try {
+      await renderMedia({
+        composition,
+        serveUrl: bundled,
+        codec: "h264",
+        outputLocation: outFile,
+        inputProps: config,
+        onProgress: async ({ progress: p }) => {
+          const pct = 30 + Math.round(p * 55)
+          await db
+            .update(renderJobs)
+            .set({ progress: pct, stage: `Rendering ${Math.round(p * 100)}%` })
+            .where(eq(renderJobs.id, jobId))
+        },
+      })
+      renderLog("job", "renderMedia complete", { jobId, outFile })
+    } catch (err) {
+      renderError("job", `renderMedia failed — jobId="${jobId}"`, err)
+      throw err
+    }
 
     // 5. Upload to R2
     await setJobStage(jobId, "Uploading to R2", 88)
     const videoBuffer = fs.readFileSync(outFile)
     const key = renderKey(projectId, jobId)
-    const outputUrl = await uploadVideoToR2(key, videoBuffer)
+    renderLog("job", "uploading to R2", { jobId, key, bytes: videoBuffer.length })
+    let outputUrl: string
+    try {
+      outputUrl = await uploadVideoToR2(key, videoBuffer)
+      renderLog("job", "R2 upload done", { jobId, key, outputUrl })
+    } catch (err) {
+      renderError("job", `R2 upload failed — jobId="${jobId}", key="${key}"`, err)
+      throw err
+    }
 
     // 6. Clean up temp file
     fs.unlinkSync(outFile)
@@ -125,14 +171,7 @@ export async function runRenderJob(jobId: string): Promise<void> {
     // 7. Mark job done
     await db
       .update(renderJobs)
-      .set({
-        status: "done",
-        progress: 100,
-        stage: "Complete",
-        outputUrl,
-        r2Key: key,
-        completedAt: new Date(),
-      })
+      .set({ status: "done", progress: 100, stage: "Complete", outputUrl, r2Key: key, completedAt: new Date() })
       .where(eq(renderJobs.id, jobId))
 
     // 8. Update project status
@@ -141,24 +180,24 @@ export async function runRenderJob(jobId: string): Promise<void> {
       .set({ status: "done" })
       .where(eq(projects.id, projectId))
 
-    console.log(`[render] Job ${jobId} complete — ${outputUrl}`)
+    renderLog("job", "render job complete", { jobId, projectId, elapsedMs: Date.now() - jobStart, outputUrl })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error(`[render] Job ${jobId} failed:`, message)
+    renderError("job", `render job failed — jobId="${jobId}", projectId="${projectId}"`, err)
 
-    await db
-      .update(renderJobs)
-      .set({
-        status: "failed",
-        error: message,
-        completedAt: new Date(),
-      })
-      .where(eq(renderJobs.id, jobId))
+    try {
+      await db
+        .update(renderJobs)
+        .set({ status: "failed", error: message, completedAt: new Date() })
+        .where(eq(renderJobs.id, jobId))
 
-    await db
-      .update(projects)
-      .set({ status: "failed" })
-      .where(eq(projects.id, projectId))
+      await db
+        .update(projects)
+        .set({ status: "failed" })
+        .where(eq(projects.id, projectId))
+    } catch (dbErr) {
+      renderError("job", `failed to write error status to DB — jobId="${jobId}"`, dbErr)
+    }
 
     throw err
   }

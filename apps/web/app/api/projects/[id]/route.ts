@@ -19,38 +19,43 @@ export async function GET(
 
   const { id } = await params
 
-  const [project] = await db
-    .select()
-    .from(projects)
-    .where(eq(projects.id, id))
-    .limit(1)
+  try {
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, id))
+      .limit(1)
 
-  if (!project || project.userId !== userId) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+    if (!project || project.userId !== userId) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+
+    const [latestConfig] = await db
+      .select()
+      .from(videoConfigs)
+      .where(eq(videoConfigs.projectId, id))
+      .orderBy(desc(videoConfigs.version))
+      .limit(1)
+
+    const storedMessages = await db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.projectId, id))
+      .orderBy(chatMessages.createdAt)
+
+    const uiMessages: UIMessage[] = storedMessages.map((m) => ({
+      id: m.id,
+      role: m.role as "user" | "assistant",
+      parts: m.parts as UIMessage["parts"],
+    }))
+
+    return NextResponse.json({
+      project,
+      config: (latestConfig?.config as VideoConfig) ?? null,
+      messages: uiMessages,
+    })
+  } catch (err) {
+    console.error(`[api/projects/${id}] GET failed:`, err)
+    return NextResponse.json({ error: "Failed to fetch project" }, { status: 500 })
   }
-
-  const [latestConfig] = await db
-    .select()
-    .from(videoConfigs)
-    .where(eq(videoConfigs.projectId, id))
-    .orderBy(desc(videoConfigs.version))
-    .limit(1)
-
-  const storedMessages = await db
-    .select()
-    .from(chatMessages)
-    .where(eq(chatMessages.projectId, id))
-    .orderBy(chatMessages.createdAt)
-
-  const uiMessages: UIMessage[] = storedMessages.map((m) => ({
-    id: m.id,
-    role: m.role as "user" | "assistant",
-    parts: m.parts as UIMessage["parts"],
-  }))
-
-  return NextResponse.json({
-    project,
-    config: (latestConfig?.config as VideoConfig) ?? null,
-    messages: uiMessages,
-  })
 }

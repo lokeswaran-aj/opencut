@@ -19,48 +19,61 @@ export async function GET(
 
   const { id: projectId } = await params
 
-  const [project] = await db
-    .select()
-    .from(projects)
-    .where(eq(projects.id, projectId))
-    .limit(1)
+  try {
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1)
 
-  if (!project || project.userId !== userId) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
-  }
+    if (!project || project.userId !== userId) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
 
-  const [job] = await db
-    .select()
-    .from(renderJobs)
-    .where(eq(renderJobs.projectId, projectId))
-    .orderBy(desc(renderJobs.createdAt))
-    .limit(1)
+    const [job] = await db
+      .select()
+      .from(renderJobs)
+      .where(eq(renderJobs.projectId, projectId))
+      .orderBy(desc(renderJobs.createdAt))
+      .limit(1)
 
-  if (!job || job.status !== "done" || !job.r2Key) {
-    return NextResponse.json({ error: "No completed render found" }, { status: 404 })
-  }
+    if (!job || job.status !== "done" || !job.r2Key) {
+      return NextResponse.json({ error: "No completed render found" }, { status: 404 })
+    }
 
-  // Fetch from R2 server-side — no CORS issues
-  const obj = await r2.send(
-    new GetObjectCommand({
-      Bucket: process.env.CLOUDFLARE_R2_BUCKET_NAME!,
-      Key: job.r2Key,
+    console.log(`[api/download] fetching from R2`, { projectId, r2Key: job.r2Key })
+
+    let obj
+    try {
+      obj = await r2.send(
+        new GetObjectCommand({
+          Bucket: process.env.CLOUDFLARE_R2_BUCKET_NAME!,
+          Key: job.r2Key,
+        })
+      )
+    } catch (r2Err) {
+      console.error(`[api/download] R2 GetObject failed for key="${job.r2Key}":`, r2Err)
+      return NextResponse.json({ error: "Failed to fetch video from storage" }, { status: 502 })
+    }
+
+    if (!obj.Body) {
+      console.error(`[api/download] R2 object body is empty for key="${job.r2Key}"`)
+      return NextResponse.json({ error: "File not found in storage" }, { status: 404 })
+    }
+
+    const filename = `opencut-${projectId}.mp4`
+    console.log(`[api/download] streaming video to client`, { projectId, filename, bytes: obj.ContentLength })
+    return new Response(obj.Body.transformToWebStream(), {
+      headers: {
+        "Content-Type": "video/mp4",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        ...(obj.ContentLength
+          ? { "Content-Length": String(obj.ContentLength) }
+          : {}),
+      },
     })
-  )
-
-  if (!obj.Body) {
-    return NextResponse.json({ error: "File not found in storage" }, { status: 404 })
+  } catch (err) {
+    console.error(`[api/download] GET failed for project="${projectId}":`, err)
+    return NextResponse.json({ error: "Failed to download video" }, { status: 500 })
   }
-
-  // Stream R2 body directly to the client with download headers
-  const filename = `opencut-${projectId}.mp4`
-  return new Response(obj.Body.transformToWebStream(), {
-    headers: {
-      "Content-Type": "video/mp4",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-      ...(obj.ContentLength
-        ? { "Content-Length": String(obj.ContentLength) }
-        : {}),
-    },
-  })
 }

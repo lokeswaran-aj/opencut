@@ -15,17 +15,22 @@ export async function GET(
   }
 
   const { id } = await params
-  const [file] = await db
-    .select()
-    .from(audioFiles)
-    .where(eq(audioFiles.id, id))
-    .limit(1)
 
-  if (!file) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  try {
+    const [file] = await db
+      .select()
+      .from(audioFiles)
+      .where(eq(audioFiles.id, id))
+      .limit(1)
+
+    if (!file) {
+      console.warn(`[api/audio] file not found: id="${id}"`)
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+
+    return NextResponse.redirect(file.publicUrl)
+  } catch (err) {
+    console.error(`[api/audio] GET failed for id="${id}":`, err)
+    return NextResponse.json({ error: "Failed to fetch audio" }, { status: 500 })
   }
-
-  // Redirect to the R2 public URL (or presigned URL if bucket is private).
-  // Remotion's <Audio> component follows the redirect automatically.
-  return NextResponse.redirect(file.publicUrl)
 }

@@ -20,6 +20,16 @@ function mp3DurationMs(buffer: Buffer): number {
   return Math.ceil((buffer.length / 16000) * 1000)
 }
 
+function toolLog(provider: string, msg: string, data?: Record<string, unknown>) {
+  const ts = new Date().toISOString()
+  const extra = data ? ` ${JSON.stringify(data)}` : ""
+  console.log(`[tool:${provider}] ${ts} ${msg}${extra}`)
+}
+function toolError(provider: string, msg: string, err: unknown) {
+  const detail = err instanceof Error ? err.message : String(err)
+  console.error(`[tool:${provider}] ERROR ${new Date().toISOString()} ${msg} — ${detail}`)
+}
+
 // --------------- tools ---------------
 
 export function makeTools(projectId: string) {
@@ -40,47 +50,55 @@ Call this FIRST for new videos, or skip if the user provides enough context.`,
       execute: async ({ input, depth }) => {
         const isUrl = input.startsWith("http")
         const limit = depth === "deep" ? 5 : 3
-        let content = ""
-        const sources: { url: string; title: string }[] = []
+        toolLog("firecrawl", `starting research`, { projectId, input: input.slice(0, 80), isUrl, depth })
 
-        if (isUrl) {
-          const scraped = await firecrawl.scrape(input, { formats: ["markdown"] })
-          content = scraped.markdown ?? ""
-          sources.push({ url: input, title: scraped.metadata?.title ?? input })
-        } else {
-          const results = await firecrawl.search(input, {
-            limit,
-            scrapeOptions: { formats: ["markdown"] },
-          })
-          const webResults =
-            (results as { data?: { web?: unknown[] } }).data?.web ??
-            (Array.isArray((results as { data?: unknown }).data)
-              ? (results as { data: unknown[] }).data
-              : [])
-          for (const r of webResults as { url?: string; title?: string; markdown?: string }[]) {
-            if (r.markdown) content += `\n\n## ${r.title ?? r.url}\n${r.markdown}`
-            if (r.url) sources.push({ url: r.url, title: r.title ?? r.url })
+        try {
+          let content = ""
+          const sources: { url: string; title: string }[] = []
+
+          if (isUrl) {
+            const scraped = await firecrawl.scrape(input, { formats: ["markdown"] })
+            content = scraped.markdown ?? ""
+            sources.push({ url: input, title: scraped.metadata?.title ?? input })
+          } else {
+            const results = await firecrawl.search(input, {
+              limit,
+              scrapeOptions: { formats: ["markdown"] },
+            })
+            const webResults =
+              (results as { data?: { web?: unknown[] } }).data?.web ??
+              (Array.isArray((results as { data?: unknown }).data)
+                ? (results as { data: unknown[] }).data
+                : [])
+            for (const r of webResults as { url?: string; title?: string; markdown?: string }[]) {
+              if (r.markdown) content += `\n\n## ${r.title ?? r.url}\n${r.markdown}`
+              if (r.url) sources.push({ url: r.url, title: r.title ?? r.url })
+            }
           }
+
+          const summary = content.slice(0, 1000)
+          const keyFacts = content
+            .split("\n")
+            .filter((l) => l.startsWith("- ") || l.startsWith("* "))
+            .slice(0, 12)
+            .map((l) => l.replace(/^[-*]\s+/, ""))
+
+          await db.insert(researchReports).values({
+            projectId,
+            topic: isUrl ? undefined : input,
+            sourceUrl: isUrl ? input : undefined,
+            content,
+            summary,
+            keyFacts,
+            sources,
+          })
+
+          toolLog("firecrawl", `research done`, { projectId, sources: sources.length, contentLen: content.length })
+          return { content: content.slice(0, 8000), summary, keyFacts, sources }
+        } catch (err) {
+          toolError("firecrawl", `research failed for "${input.slice(0, 80)}"`, err)
+          throw err
         }
-
-        const summary = content.slice(0, 1000)
-        const keyFacts = content
-          .split("\n")
-          .filter((l) => l.startsWith("- ") || l.startsWith("* "))
-          .slice(0, 12)
-          .map((l) => l.replace(/^[-*]\s+/, ""))
-
-        await db.insert(researchReports).values({
-          projectId,
-          topic: isUrl ? undefined : input,
-          sourceUrl: isUrl ? input : undefined,
-          content,
-          summary,
-          keyFacts,
-          sources,
-        })
-
-        return { content: content.slice(0, 8000), summary, keyFacts, sources }
       },
     }),
 
@@ -95,41 +113,51 @@ Returns the audio URL and duration to use as constants in the Remotion component
       }),
       execute: async ({ id, text, voiceId }) => {
         const voice = voiceId ?? DEFAULT_VOICE_ID
-        const textHash = createHash("md5").update(text).digest("hex").slice(0, 8)
-        const key = audioKey(projectId, id, "narration", textHash)
+        toolLog("elevenlabs", `generating narration`, { projectId, id, voiceId: voice, textLen: text.length })
 
-        const audioStream = await elevenlabs.textToSpeech.convert(voice, {
-          text,
-          model_id: "eleven_multilingual_v2",
-          output_format: "mp3_44100_128",
-        })
+        try {
+          const textHash = createHash("md5").update(text).digest("hex").slice(0, 8)
+          const key = audioKey(projectId, id, "narration", textHash)
 
-        const chunks: Buffer[] = []
-        for await (const chunk of audioStream) {
-          chunks.push(Buffer.from(chunk))
+          const audioStream = await elevenlabs.textToSpeech.convert(voice, {
+            text,
+            model_id: "eleven_multilingual_v2",
+            output_format: "mp3_44100_128",
+          })
+
+          const chunks: Buffer[] = []
+          for await (const chunk of audioStream) {
+            chunks.push(Buffer.from(chunk))
+          }
+          const buffer = Buffer.concat(chunks)
+
+          toolLog("elevenlabs", `TTS done, uploading to R2`, { projectId, id, bufferBytes: buffer.length })
+
+          const { publicUrl } = await uploadToR2(key, buffer, "audio/mpeg")
+          const durationMs = mp3DurationMs(buffer)
+          const durationInFrames = Math.ceil((durationMs / 1000) * 30)
+
+          await db.insert(audioFiles).values({
+            projectId,
+            sceneId: id,
+            type: "narration",
+            r2Key: key,
+            publicUrl,
+            durationMs,
+            durationInFrames,
+            voiceId: voice,
+            textHash,
+          })
+
+          const asset: AudioAsset = { id, url: publicUrl, durationMs, durationInFrames, text }
+          audioAssets.push(asset)
+
+          toolLog("elevenlabs", `narration ready`, { projectId, id, durationMs, publicUrl })
+          return asset
+        } catch (err) {
+          toolError("elevenlabs", `narration failed for id="${id}"`, err)
+          throw err
         }
-        const buffer = Buffer.concat(chunks)
-
-        const { publicUrl } = await uploadToR2(key, buffer, "audio/mpeg")
-        const durationMs = mp3DurationMs(buffer)
-        const durationInFrames = Math.ceil((durationMs / 1000) * 30)
-
-        await db.insert(audioFiles).values({
-          projectId,
-          sceneId: id,
-          type: "narration",
-          r2Key: key,
-          publicUrl,
-          durationMs,
-          durationInFrames,
-          voiceId: voice,
-          textHash,
-        })
-
-        const asset: AudioAsset = { id, url: publicUrl, durationMs, durationInFrames, text }
-        audioAssets.push(asset)
-
-        return asset
       },
     }),
 
@@ -155,36 +183,43 @@ Only call if GOOGLE_VERTEX_PROJECT is configured.`,
       execute: async ({ id, prompt, aspectRatio }) => {
         const project = process.env.GOOGLE_VERTEX_PROJECT
         if (!project) {
+          toolError("vertex-imagen", "GOOGLE_VERTEX_PROJECT env var missing", "")
           throw new Error("GOOGLE_VERTEX_PROJECT is required for image generation")
         }
 
-        // Use the AI SDK's experimental_generateImage for Vertex AI Imagen
-        const { experimental_generateImage: generateImage } = await import("ai")
-        const { createVertex } = await import("@ai-sdk/google-vertex")
+        toolLog("vertex-imagen", `generating image`, { projectId, id, aspectRatio, promptLen: prompt.length })
 
-        const vertex = createVertex({
-          project,
-          location: process.env.GOOGLE_VERTEX_LOCATION ?? "us-central1",
-        })
+        try {
+          const { experimental_generateImage: generateImage } = await import("ai")
+          const { createVertex } = await import("@ai-sdk/google-vertex")
 
-        const { image } = await generateImage({
-          model: vertex.image("imagen-3.0-generate-001"),
-          prompt,
-          aspectRatio,
-          providerOptions: {
-            vertex: { sampleCount: 1 },
-          },
-        })
+          const vertex = createVertex({
+            project,
+            location: process.env.GOOGLE_VERTEX_LOCATION ?? "us-central1",
+          })
 
-        // Upload to R2
-        const key = `images/${projectId}/${id}-${createHash("md5").update(prompt).digest("hex").slice(0, 8)}.png`
-        const buffer = Buffer.from(image.base64, "base64")
-        const { publicUrl } = await uploadToR2(key, buffer, "image/png")
+          const { image } = await generateImage({
+            model: vertex.image("imagen-3.0-generate-001"),
+            prompt,
+            aspectRatio,
+            providerOptions: { vertex: { sampleCount: 1 } },
+          })
 
-        const asset: ImageAsset = { id, url: publicUrl }
-        imageAssets.push(asset)
+          toolLog("vertex-imagen", `image generated, uploading to R2`, { projectId, id })
 
-        return asset
+          const key = `images/${projectId}/${id}-${createHash("md5").update(prompt).digest("hex").slice(0, 8)}.png`
+          const buffer = Buffer.from(image.base64, "base64")
+          const { publicUrl } = await uploadToR2(key, buffer, "image/png")
+
+          const asset: ImageAsset = { id, url: publicUrl }
+          imageAssets.push(asset)
+
+          toolLog("vertex-imagen", `image ready`, { projectId, id, publicUrl })
+          return asset
+        } catch (err) {
+          toolError("vertex-imagen", `image generation failed for id="${id}"`, err)
+          throw err
+        }
       },
     }),
 
@@ -206,30 +241,41 @@ The AI will write animations, layouts, text, scenes, and audio sync from scratch
         const totalWithBuffer = totalDurationMs + 2000
         const durationInFrames = Math.round((totalWithBuffer * fps) / 1000)
 
-        const prompt = buildCodeGenerationPrompt({
-          topic,
-          researchSummary: researchSummary + (style ? `\n\nVisual style: ${style}` : ""),
-          aspectRatio,
-          durationInFrames,
-          fps,
-          audioAssets,
-          imageAssets,
+        toolLog("gemini", `generating Remotion code`, {
+          projectId, topic: topic.slice(0, 60), aspectRatio, durationInFrames,
+          audioAssets: audioAssets.length, imageAssets: imageAssets.length,
         })
 
-        const { text: rawCode } = await generateText({
-          model: getGenerationModel(),
-          system: REMOTION_SYSTEM_PROMPT,
-          prompt,
-          temperature: 0.7,
-        })
+        try {
+          const prompt = buildCodeGenerationPrompt({
+            topic,
+            researchSummary: researchSummary + (style ? `\n\nVisual style: ${style}` : ""),
+            aspectRatio,
+            durationInFrames,
+            fps,
+            audioAssets,
+            imageAssets,
+          })
 
-        // Strip markdown fences if the model wraps in ```tsx ... ```
-        const code = rawCode
-          .replace(/^```(?:tsx?|jsx?|javascript|typescript)?\s*\n/m, "")
-          .replace(/\n```\s*$/m, "")
-          .trim()
+          const { text: rawCode } = await generateText({
+            model: getGenerationModel(),
+            system: REMOTION_SYSTEM_PROMPT,
+            prompt,
+            temperature: 0.7,
+          })
 
-        return { code, durationInFrames, fps }
+          // Strip markdown fences if the model wraps in ```tsx ... ```
+          const code = rawCode
+            .replace(/^```(?:tsx?|jsx?|javascript|typescript)?\s*\n/m, "")
+            .replace(/\n```\s*$/m, "")
+            .trim()
+
+          toolLog("gemini", `code generation done`, { projectId, codeLen: code.length, durationInFrames })
+          return { code, durationInFrames, fps }
+        } catch (err) {
+          toolError("gemini", `code generation failed for topic="${topic.slice(0, 60)}"`, err)
+          throw err
+        }
       },
     }),
 
@@ -245,35 +291,43 @@ Updates project status to 'ready' so the Remotion Player can display the video.`
         aspectRatio: z.enum(["9:16", "16:9", "1:1", "4:5"]).default("9:16"),
       }),
       execute: async ({ title, code, durationInFrames, fps, aspectRatio }) => {
-        const config: VideoConfig = {
-          id: projectId,
-          title,
-          aspectRatio,
-          fps,
-          durationInFrames,
-          code,
+        toolLog("db", `saving video config`, { projectId, title, durationInFrames, codeLen: code.length })
+
+        try {
+          const config: VideoConfig = {
+            id: projectId,
+            title,
+            aspectRatio,
+            fps,
+            durationInFrames,
+            code,
+          }
+
+          const [latest] = await db
+            .select({ version: videoConfigs.version })
+            .from(videoConfigs)
+            .where(eq(videoConfigs.projectId, projectId))
+            .orderBy(desc(videoConfigs.version))
+            .limit(1)
+
+          const nextVersion = (latest?.version ?? 0) + 1
+
+          const [saved] = await db
+            .insert(videoConfigs)
+            .values({ projectId, config, version: nextVersion })
+            .returning()
+
+          await db
+            .update(projects)
+            .set({ status: "ready", updatedAt: new Date() })
+            .where(eq(projects.id, projectId))
+
+          toolLog("db", `video config saved`, { projectId, videoConfigId: saved!.id, version: nextVersion })
+          return { videoConfigId: saved!.id, version: nextVersion, durationInFrames }
+        } catch (err) {
+          toolError("db", `failed to save video config for project="${projectId}"`, err)
+          throw err
         }
-
-        const [latest] = await db
-          .select({ version: videoConfigs.version })
-          .from(videoConfigs)
-          .where(eq(videoConfigs.projectId, projectId))
-          .orderBy(desc(videoConfigs.version))
-          .limit(1)
-
-        const nextVersion = (latest?.version ?? 0) + 1
-
-        const [saved] = await db
-          .insert(videoConfigs)
-          .values({ projectId, config, version: nextVersion })
-          .returning()
-
-        await db
-          .update(projects)
-          .set({ status: "ready", updatedAt: new Date() })
-          .where(eq(projects.id, projectId))
-
-        return { videoConfigId: saved!.id, version: nextVersion, durationInFrames }
       },
     }),
 

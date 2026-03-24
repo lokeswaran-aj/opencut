@@ -41,15 +41,24 @@ app.get("/jobs/:jobId", async (c) => {
   }
 
   const { jobId } = c.req.param()
-  const [job] = await db
-    .select()
-    .from(renderJobs)
-    .where(eq(renderJobs.id, jobId))
-    .limit(1)
 
-  if (!job) return c.json({ error: "Not found" }, 404)
+  try {
+    const [job] = await db
+      .select()
+      .from(renderJobs)
+      .where(eq(renderJobs.id, jobId))
+      .limit(1)
 
-  return c.json(job)
+    if (!job) {
+      console.warn(`[render-worker][jobs] job not found: jobId="${jobId}"`)
+      return c.json({ error: "Not found" }, 404)
+    }
+
+    return c.json(job)
+  } catch (err) {
+    console.error(`[render-worker][jobs] DB query failed for jobId="${jobId}":`, err)
+    return c.json({ error: "Failed to fetch job" }, 500)
+  }
 })
 
 const PORT = Number(process.env.PORT ?? 8787)
