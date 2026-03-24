@@ -135,12 +135,21 @@ Returns the audio URL and duration to use as constants in the Remotion component
 
     generate_image: tool({
       description: `Generate an image using Vertex AI Imagen for use as a visual in the video.
-Use when the video needs a custom background, illustration, or visual element that doesn't exist as stock.
+Use sparingly — only when a real photo-style image genuinely improves the video over pure animation.
+Good use cases: a product screenshot concept, a real-world scene, a clean flat illustration.
+BAD use cases: abstract AI art, glowing orbs, cosmic backgrounds, generic "futuristic" visuals — these make the video look AI-generated.
+
+When writing the prompt:
+- Be highly specific and photorealistic: "a clean flat-lay of a MacBook on a white desk, soft natural window light, top-down angle, editorial photography style"
+- Reference real-world aesthetics: "Bloomberg terminal screenshot aesthetic", "Apple product page style", "Stripe dashboard interface mockup"
+- Avoid: "futuristic", "glowing", "neon", "ethereal", "cosmic", "magical", "abstract"
+- Add negative guidance in the prompt: "no glowing effects, no neon colors, no abstract shapes, no AI art style"
+
 Returns an image URL to use as a constant in the Remotion component code.
-Only call if VERTEX AI image generation is configured (GOOGLE_VERTEX_PROJECT is set).`,
+Only call if GOOGLE_VERTEX_PROJECT is configured.`,
       inputSchema: z.object({
         id: z.string().describe("Unique identifier for this image, e.g. 'bg1', 'hero'"),
-        prompt: z.string().describe("Detailed visual description of the image to generate"),
+        prompt: z.string().describe("Highly specific, realistic visual description. Describe lighting, angle, style, and add 'no glowing effects, no neon, no abstract AI art' to the prompt."),
         aspectRatio: z.enum(["9:16", "16:9", "1:1", "3:4"]).default("9:16"),
       }),
       execute: async ({ id, prompt, aspectRatio }) => {

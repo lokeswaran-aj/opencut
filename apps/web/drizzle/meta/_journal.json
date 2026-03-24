@@ -15,6 +15,13 @@
       "when": 1774333418617,
       "tag": "0001_slippery_blockbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774337892618,
+      "tag": "0002_absurd_blade",
+      "breakpoints": true
     }
   ]
 }
