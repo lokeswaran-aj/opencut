@@ -26,6 +26,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.800.0
         version: 3.1014.0
+      '@neondatabase/serverless':
+        specifier: ^1.0.2
+        version: 1.0.2
       '@remotion/bundler':
         specifier: ^4.0.438
         version: 4.0.438(@swc/helpers@0.5.15)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)

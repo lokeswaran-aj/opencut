@@ -1,5 +1,5 @@
-import { drizzle } from "drizzle-orm/postgres-js"
-import postgres from "postgres"
+import { neon } from "@neondatabase/serverless"
+import { drizzle } from "drizzle-orm/neon-http"
 import {
   pgTable,
   uuid,
@@ -41,11 +41,8 @@ export const renderJobs = pgTable("render_jobs", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
 
-const client = postgres(process.env.DATABASE_URL!, {
-  max: 5,
-  idle_timeout: 20,
-  connect_timeout: 10,
-  ssl: "require",
-})
+// Uses Neon's HTTP transport (HTTPS port 443) instead of raw TCP port 5432.
+// This avoids firewall issues and works in any container environment.
+const sql = neon(process.env.DATABASE_URL!)
 
-export const db = drizzle(client, { casing: "snake_case" })
+export const db = drizzle(sql, { casing: "snake_case" })

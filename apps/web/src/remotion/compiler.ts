@@ -48,6 +48,22 @@ function extractComponentBody(code: string): string {
   return cleaned
 }
 
+/**
+ * Escape invalid Unicode/escape sequences inside template literals so Babel
+ * doesn't choke on AI-generated strings that embed raw HTML or content
+ * containing sequences like \u that aren't followed by 4 hex digits.
+ */
+function sanitizeTemplateLiterals(code: string): string {
+  return code.replace(/`([\s\S]*?)`/g, (_, content: string) => {
+    const safe = content
+      // Replace bare \u not followed by 4 hex digits or {…} with \\u
+      .replace(/\\u(?![0-9a-fA-F]{4}|{[0-9a-fA-F]+})/g, "\\\\u")
+      // Replace bare \x not followed by 2 hex digits with \\x
+      .replace(/\\x(?![0-9a-fA-F]{2})/g, "\\\\x")
+    return `\`${safe}\``
+  })
+}
+
 export function compileCode(code: string): CompilationResult {
   if (!code?.trim()) {
     return { Component: null, error: "No code provided" }
@@ -55,7 +71,8 @@ export function compileCode(code: string): CompilationResult {
 
   try {
     const componentBody = extractComponentBody(code)
-    const wrappedSource = `const DynamicOverlay = () => {\n${componentBody}\n};`
+    const sanitized = sanitizeTemplateLiterals(componentBody)
+    const wrappedSource = `const DynamicOverlay = () => {\n${sanitized}\n};`
 
     const transpiled = Babel.transform(wrappedSource, {
       presets: ["react", "typescript"],
