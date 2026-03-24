@@ -1,11 +1,11 @@
-# OpenCut Docs
+# Opencut Docs
 
-Welcome to the OpenCut documentation. Use the sidebar to navigate between topics.
+AI-powered short-form video generation platform. The AI generates complete Remotion React components from scratch — no templates.
 
 | Section | Description |
 |---|---|
-| [Architecture](/docs/architecture) | System architecture, monorepo structure, and data flow |
-| [Tech Stack](/docs/techstack) | All packages and versions used across the project |
-| [AI Agents & Tools](/docs/agents) | AI tool definitions, Zod schemas, and streamText flow |
-| [API Reference](/docs/api) | All Next.js and render-worker API routes |
-| [Database](/docs/database) | Drizzle ORM schema, ER diagram, and usage limit logic |
+| [Architecture](architecture.md) | System design, AI pipeline, live preview vs export, data flow |
+| [Tech Stack](techstack.md) | All packages, versions, and environment variables |
+| [AI Agents & Tools](agents.md) | Tool definitions, Remotion code generation prompt, AI pipeline |
+| [API Reference](api.md) | All Next.js and render-worker API routes |
+| [Database](database.md) | Drizzle ORM schema, ER diagram, and usage limit logic |

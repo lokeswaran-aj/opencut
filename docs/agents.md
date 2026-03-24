@@ -2,101 +2,94 @@
 
 ## Overview
 
-There is a single `streamText` call per chat request, using Claude as the model. The LLM autonomously decides which tools to invoke based on the message content and conversation history. There is no explicit agent graph — the conversation history acts as memory, and tool descriptions enforce the routing logic.
+There is a single `streamText` call per chat request using Gemini as the model. The LLM autonomously decides which tools to invoke based on the message content and conversation history. There is no explicit agent graph — the conversation history acts as memory, and tool descriptions enforce the routing logic.
 
-Two logical phases exist within this single call:
-- **Phase 1 — Research**: Firecrawl JS SDK tools wrapped as AI SDK tools
-- **Phase 2 — Video Production**: Custom AI SDK tools (ElevenLabs, Remotion config generation)
+The pipeline for a new video generation:
 
-A third phase handles iterative edits on follow-up messages.
+```
+research_topic → generate_narration (×N) → generate_image (optional, ×M) → generate_video_code → save_video_code
+```
 
 ---
 
 ## Models
 
-The model provider and names are configurable via environment variables. Defaults are Anthropic.
+All models are Google Vertex AI (Gemini). Provider and model names are configurable via environment variables.
 
-| Use case | Default model | Env var |
+| Use case | Model | Env var |
 |---|---|---|
-| Research synthesis, script generation, complex reasoning | `claude-sonnet-4-5` | `AI_GENERATION_MODEL` |
-| Lightweight edits (`patch_scene`) | `claude-haiku-4-5` | `AI_EDIT_MODEL` |
+| Code generation, complex reasoning | `gemini-3.1-pro-preview-05-06` | `AI_GENERATION_MODEL` |
+| Lightweight edits | `gemini-3.1-flash-lite-preview-05-06` | `AI_EDIT_MODEL` |
 
-The provider is selected by `AI_PROVIDER` (`anthropic` or `vertex`). The `getGenerationModel()` / `getEditModel()` helpers in `src/lib/ai/model.ts` return the correct model instance. The `/api/chat` route classifies each incoming message as generation vs. edit and picks the appropriate model.
+Model helpers live in `src/lib/ai/model.ts` and export `getGenerationModel()` and `getEditModel()`.
+
+**Google Vertex AI credentials** — choose one:
+- **Local dev**: set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`
+- **Deployment**: set `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY` extracted from the service account JSON
 
 ---
 
 ## Tool Invocation Flow
 
-### New project (first message)
+### New video (first message)
 
 ```
-User: "Make a TikTok video about Stripe's payment APIs"
+User: "Make a TikTok about how Stripe processes payments"
 
-Claude calls:
-  1. research_topic({ input: "Stripe payment APIs" })
-      └─ internally calls firecrawl.search / firecrawl.scrape
-      └─ returns: { content, summary, keyFacts, sources }
+Gemini calls:
+  1. research_topic({ input: "how Stripe processes payments" })
+     └─ Firecrawl search + scrape → returns research summary
 
-  2. generate_video_script({ researchContent, topic, aspectRatio: "9:16" })
-      └─ uses generateObject with VideoScriptSchema
-      └─ returns: VideoConfig skeleton (scenes with _narrationText in data, no audio yet)
+  2. generate_narration({ text: "Hook: Did you know Stripe processes...", segmentId: "seg-1" })
+  3. generate_narration({ text: "Stripe's payment flow starts with...", segmentId: "seg-2" })
+  4. generate_narration({ text: "The secret is their unified API...", segmentId: "seg-3" })
+     └─ ElevenLabs TTS → uploads to R2 → stores AudioAsset in closure
 
-  3. generate_audio_segment({ sceneId: "scene-0", narrationText: "...", voiceId? })
-  4. generate_audio_segment({ sceneId: "scene-1", narrationText: "..." })
-  5. generate_audio_segment({ sceneId: "scene-2", narrationText: "..." })
-     ... (one call per scene, run sequentially so progress is visible in chat)
+  5. generate_image({ prompt: "futuristic payment network visualization" })  ← optional
+     └─ Vertex AI Imagen 3 → uploads to R2 → stores ImageAsset in closure
 
-  6. save_video_config({ config: VideoConfig })
-      └─ auto-merges audio files from audioFiles table by sceneId
-      └─ saves complete config (with scene.audio populated) to video_configs
-      └─ updates project status to "ready"
-      └─ returns: { videoConfigId, version, config }
+  6. generate_video_code({ topic, researchSummary, aspectRatio })
+     └─ Collects all AudioAssets + ImageAssets from closure
+     └─ Builds prompt with asset URLs + durations
+     └─ Gemini 3.1 Pro generates complete Remotion TSX component
+     └─ Returns { code, durationInFrames, fps, title }
 
-Claude: "Here's your video about Stripe's APIs! I've created 5 scenes covering
-        their core payment flow, Stripe Elements, and webhooks. Preview is ready."
+  7. save_video_code({ code, durationInFrames, fps, title, aspectRatio })
+     └─ Inserts VideoConfig into video_configs table
+     └─ Updates projects.status = "ready"
+
+Gemini: "Your video about Stripe's payment APIs is ready!"
 ```
 
-### Follow-up edit (visual change only)
+### Follow-up edit (regenerate video)
 
 ```
-User: "Make the intro heading bigger"
+User: "Make it more energetic and add a punchy hook at the start"
 
-Claude calls:
-  1. patch_scene({ sceneId: "scene-0", updates: { heading: "NEW HEADING TEXT" }, newDurationInFrames? })
-      └─ model: getEditModel() (haiku by default)
-      └─ merges updates into scene.data, saves new version to video_configs
-      └─ returns: { videoConfigId, config }
+Gemini calls:
+  1. generate_narration({ text: "New hook text...", segmentId: "seg-0" })
+     └─ Replaces or adds audio for the hook
 
-Claude: "Updated the intro heading."
-```
+  2. generate_video_code({ topic, researchSummary, aspectRatio })
+     └─ Regenerates the full component with the new audio + updated style
 
-### Follow-up edit (narration change)
+  3. save_video_code({ code, durationInFrames, fps, title, aspectRatio })
+     └─ Saves as a new version
 
-```
-User: "Rewrite the narration for scene 2 to be more energetic"
-
-Claude calls:
-  1. regenerate_audio_segment({ sceneId: "scene-2", newNarrationText: "...", voiceId? })
-      └─ calls ElevenLabs TTS with new text
-      └─ uploads new audio to R2, inserts new audio_files row
-      └─ returns: AudioSegment with new publicUrl
-
-Claude: "Redone! Scene 2's narration now has more energy."
+Gemini: "Rewrote the video with a stronger opening hook!"
 ```
 
 ---
 
 ## Tool Definitions
 
-All tools are created by `makeTools(projectId)` in `src/lib/ai/tools.ts`. The `projectId` is captured via closure — no tool accepts it as an explicit input.
-
-### Phase 1 — Research Tools
-
-These wrap the Firecrawl JS SDK (`@mendable/firecrawl-js`). The LLM calls `research_topic` and the tool internally orchestrates Firecrawl calls based on whether the input is a URL or a topic string.
+All tools are created by `makeTools(projectId, projectAspectRatio)` in `src/lib/ai/tools.ts`. The `projectId` and `aspectRatio` are captured via closure. `audioAssets` and `imageAssets` arrays are also closure variables that accumulate across tool calls within a single `streamText` invocation.
 
 ---
 
-#### `research_topic`
+### `research_topic`
+
+Researches a topic or URL using Firecrawl. Result is saved to `research_reports` table and returned to the LLM for use in the next steps.
 
 ```typescript
 research_topic: tool({
@@ -106,271 +99,197 @@ research_topic: tool({
   execute: async ({ input }) => {
     const isUrl = input.startsWith("http")
     if (isUrl) {
-      const result = await firecrawl.scrape(input, { formats: ["markdown"] })
-      // build content from result.markdown
+      // firecrawl.scrape(input, { formats: ["markdown"] })
     } else {
-      const results = await firecrawl.search(input, {
-        limit: 5,
-        scrapeOptions: { formats: ["markdown"], onlyMainContent: true },
-      })
-      // build content from results[].markdown
+      // firecrawl.search(input, { limit: 5, scrapeOptions: { formats: ["markdown"] } })
     }
-    await db.insert(researchReports).values({ projectId, content, summary, keyFacts, sources })
-    return { content, summary, keyFacts, sources }
-  },
-})
-```
-
-**Internally uses:**
-- `firecrawl.search(query, { limit, scrapeOptions })` — web search + scrape (topic input)
-- `firecrawl.scrape(url, { formats: ["markdown"] })` — single-page scrape (URL input)
-
----
-
-### Phase 2 — Video Production Tools
-
-#### `generate_video_script`
-
-```typescript
-generate_video_script: tool({
-  inputSchema: z.object({
-    researchContent: z.string(),
-    topic: z.string(),
-    aspectRatio: z.enum(["9:16", "16:9", "1:1", "4:5"]).default("9:16"),
-  }),
-  execute: async ({ researchContent, topic, aspectRatio }) => {
-    const { object: script } = await generateObject({
-      model: getGenerationModel(),
-      schema: VideoScriptSchema,   // from @repo/types
-      prompt: buildScriptPrompt(researchContent, topic, aspectRatio),
-    })
-    // Maps script.scenes → VideoConfig; stores narrationText in scene.data._narrationText
-    return config   // VideoConfig (fps: 30, no audio yet)
+    await db.insert(researchReports).values({ projectId, content, summary, sources })
+    return { content, summary, sources }
   },
 })
 ```
 
 ---
 
-#### `generate_audio_segment`
+### `generate_narration`
+
+Generates a single TTS audio segment via ElevenLabs. Uploads the mp3 to R2 and stores the `AudioAsset` in the closure for `generate_video_code` to consume.
 
 ```typescript
-generate_audio_segment: tool({
+generate_narration: tool({
   inputSchema: z.object({
-    sceneId: z.string(),
-    narrationText: z.string().max(600),
+    text: z.string().describe("The narration text to speak"),
+    segmentId: z.string().describe("Unique ID for this segment e.g. 'seg-1'"),
     voiceId: z.string().optional(),
   }),
-  execute: async ({ sceneId, narrationText, voiceId }) => {
+  execute: async ({ text, segmentId, voiceId }) => {
     const audioStream = await elevenlabs.textToSpeech.convert(voice, {
-      text: narrationText,
+      text,
       model_id: "eleven_multilingual_v2",
       output_format: "mp3_44100_128",
     })
     const buffer = await streamToBuffer(audioStream)
-    const { publicUrl } = await uploadToR2(key, buffer, "audio/mpeg")
-    await db.insert(audioFiles).values({ projectId, sceneId, publicUrl, durationMs, ... })
-    return AudioSegment  // { id, type, r2Key, publicUrl, durationMs, durationInFrames, voiceId }
+    const durationMs = await mp3DurationMs(buffer)
+    const publicUrl = await uploadToR2(`audio/${projectId}/${segmentId}.mp3`, buffer)
+    await db.insert(audioFiles).values({ projectId, sceneId: segmentId, publicUrl, durationMs, ... })
+
+    const asset: AudioAsset = { id: segmentId, url: publicUrl, durationMs, durationInFrames, text }
+    audioAssets.push(asset)  // stored in closure for generate_video_code
+    return asset
   },
 })
 ```
 
 ---
 
-#### `save_video_config`
+### `generate_image`
+
+Optional tool — the AI decides whether to call it based on the topic. Generates an image using Vertex AI Imagen 3, uploads to R2, and stores the `ImageAsset` in the closure.
 
 ```typescript
-save_video_config: tool({
-  // Audio is auto-merged from audioFiles table — AI does NOT need to pass audio in config
+generate_image: tool({
   inputSchema: z.object({
-    config: z.custom<VideoConfig>(),
+    prompt: z.string().describe("Detailed description of the image to generate"),
+    imageId: z.string().describe("Unique ID e.g. 'img-1'"),
   }),
-  execute: async ({ config }) => {
-    // 1. Query all audioFiles for this project (latest per sceneId)
-    // 2. Attach each as scene.audio: AudioSegment
-    // 3. Enforce fps: config.fps ?? 30
-    // 4. INSERT into video_configs with merged config
-    // 5. UPDATE projects SET status = "ready"
-    return { videoConfigId, version, config: configWithAudio }
+  execute: async ({ prompt, imageId }) => {
+    const { image } = await experimental_generateImage({
+      model: vertex.image("imagen-3.0-generate-001"),
+      prompt,
+      aspectRatio: toImagenAspectRatio(projectAspectRatio),
+    })
+    const publicUrl = await uploadToR2(`images/${projectId}/${imageId}.png`, image.uint8Array)
+
+    const asset: ImageAsset = { id: imageId, url: publicUrl }
+    imageAssets.push(asset)  // stored in closure for generate_video_code
+    return asset
   },
 })
 ```
 
 ---
 
-### Phase 3 — Edit Tools
+### `generate_video_code`
 
-Edit tools use `getEditModel()` (haiku by default). Only called on follow-up messages when a video already exists.
-
----
-
-#### `patch_scene`
+The core tool. Collects all accumulated `audioAssets` and `imageAssets`, calculates total duration, builds a detailed prompt via `buildCodeGenerationPrompt` (from `remotion-prompt.ts`), and uses Gemini 3.1 Pro to generate the complete Remotion TSX component as a string.
 
 ```typescript
-patch_scene: tool({
+generate_video_code: tool({
   inputSchema: z.object({
-    sceneId: z.string(),
-    updates: z.record(z.unknown()),          // merged into scene.data
-    newDurationInFrames: z.number().optional(),
+    topic: z.string(),
+    researchSummary: z.string(),
   }),
-  // Loads latest VideoConfig from DB, merges updates into target scene.data,
-  // saves as a new version. Does NOT touch audio.
+  execute: async ({ topic, researchSummary }) => {
+    const totalDurationInFrames = audioAssets.reduce((sum, a) => sum + a.durationInFrames, 0)
+    const prompt = buildCodeGenerationPrompt({
+      topic, researchSummary,
+      aspectRatio: projectAspectRatio,
+      durationInFrames: totalDurationInFrames,
+      fps: 30,
+      audioAssets,   // all AudioAssets accumulated so far
+      imageAssets,   // all ImageAssets accumulated so far (may be empty)
+    })
+    const { text: code } = await generateText({
+      model: getGenerationModel(),
+      system: REMOTION_SYSTEM_PROMPT,
+      prompt,
+    })
+    return { code, durationInFrames: totalDurationInFrames, fps: 30, title: topic }
+  },
 })
 ```
 
 ---
 
-#### `regenerate_audio_segment`
+### `save_video_code`
+
+Final step. Takes the generated code and metadata, creates the `VideoConfig`, persists it to the database, and marks the project as ready.
 
 ```typescript
-regenerate_audio_segment: tool({
+save_video_code: tool({
   inputSchema: z.object({
-    sceneId: z.string(),
-    newNarrationText: z.string().max(600),
-    voiceId: z.string().optional(),
+    code: z.string(),
+    durationInFrames: z.number(),
+    fps: z.number(),
+    title: z.string(),
+    aspectRatio: z.enum(["9:16", "16:9", "1:1", "4:5"]),
   }),
-  // Calls ElevenLabs TTS, uploads to R2, inserts new audioFiles row.
-  // Returns updated AudioSegment with new publicUrl.
+  execute: async ({ code, durationInFrames, fps, title, aspectRatio }) => {
+    const config: VideoConfig = {
+      id: nanoid(),
+      title,
+      aspectRatio,
+      fps,
+      durationInFrames,
+      code,
+    }
+    await db.insert(videoConfigs).values({ projectId, config, version: nextVersion })
+    await db.update(projects).set({ status: "ready" }).where(eq(projects.id, projectId))
+    return { success: true, config }
+  },
 })
 ```
+
+---
+
+## Remotion Code Generation Prompt
+
+The code generation prompt lives in `src/lib/ai/remotion-prompt.ts` and has two parts:
+
+### `REMOTION_SYSTEM_PROMPT`
+
+System-level instructions that define the AI's role and hard rules for every generated component:
+- Output only code — no markdown, no explanations
+- Response must start with `export const VideoContent = () => {`
+- All constants go inside the component body in `UPPER_SNAKE_CASE`
+- Use only inline styles — no CSS classes
+- Documents all available globals (no import statements in generated code)
+- Mandatory preloading pattern: `preloadAudio()` and `preloadImage()` in `useEffect` at component mount
+- `pauseWhenBuffering` on every `<Audio>` — prevents muted audio at scene start
+- `premountFor={90}` only on `<Img>` Sequences — pre-downloads images before they appear
+- Visual style guidance: dark backgrounds, bold typography, spring animations, gradient usage
+- Full example of a 2-scene tech video showing correct timing, audio, and animation patterns
+
+### `buildCodeGenerationPrompt(params)`
+
+Constructs the per-request user prompt with:
+- Topic and platform hint (TikTok vs YouTube based on aspect ratio)
+- Canvas dimensions
+- Total duration in frames
+- Research summary (capped at 4000 chars)
+- Audio asset block: each URL, text snippet, and duration in ms as constants
+- Image asset block: each URL as a constant (if images were generated)
+- Final instruction to use all audio assets, add `premountFor` to image Sequences, call `preloadAudio`/`preloadImage`
 
 ---
 
 ## System Prompt
 
-Built dynamically per request in `apps/web/src/lib/ai/system-prompt.ts`:
-
-```typescript
-export function buildSystemPrompt(existingConfig: VideoConfig | null): string {
-  const hasVideo = existingConfig !== null
-  const editContext = hasVideo
-    ? `## Current Video State\n...(JSON slice of existingConfig)...\nPrefer EDIT tools over regeneration.`
-    : `## No video yet\nRun the full pipeline:\n1. research_topic\n2. generate_video_script\n3. generate_audio_segment per scene\n4. save_video_config`
-
-  return `You are Opencut, an AI video generation assistant...
-## Scene types and required data fields
-| Type    | Required data                          | Optional data  |
-|---------|----------------------------------------|----------------|
-| intro   | headline                               | subtext, gradient |
-| title   | title                                  | subtitle       |
-| bullets | heading, items (non-empty string array)| —              |
-| quote   | text                                   | author         |
-| stat    | value, label                           | context        |
-| outro   | headline                               | cta, brand     |
-
-IMPORTANT: for bullets scenes always provide both heading and items.
-## Rules
-- Always call save_video_config as the final step after all audio is ready
-- Generate audio for every scene that has narrationText
-...${editContext}`
-}
-```
-
----
-
-## VideoConfig Schema (Zod)
-
-Defined in `packages/types/src/index.ts`. This is the central data model.
-
-```typescript
-// Scene data uses a flat optional object (all fields optional because they're shared
-// across scene types). Scene components access fields via scene.data.fieldName.
-const SceneDataSchema = z.object({
-  // intro
-  headline: z.string().optional(),
-  subtext: z.string().optional(),
-  gradient: z.tuple([z.string(), z.string()]).optional(),
-  // title
-  title: z.string().optional(),
-  subtitle: z.string().optional(),
-  // bullets — items MUST be provided for bullets scenes
-  heading: z.string().optional(),
-  items: z.array(z.string()).optional(),
-  // quote
-  text: z.string().optional(),
-  author: z.string().optional(),
-  // stat
-  value: z.string().optional(),
-  label: z.string().optional(),
-  context: z.string().optional(),
-  // outro
-  cta: z.string().optional(),
-  brand: z.string().optional(),
-})
-
-const AudioSegmentSchema = z.object({
-  id: z.string(),
-  type: z.enum(["narration", "sound_effect"]),
-  r2Key: z.string(),
-  publicUrl: z.string(),           // direct R2 public URL
-  durationMs: z.number(),
-  durationInFrames: z.number(),
-  voiceId: z.string().optional(),
-})
-
-const SceneSchema = z.object({
-  id: z.string(),
-  type: z.enum(["intro", "title", "bullets", "quote", "stat", "outro"]),
-  durationInFrames: z.number(),
-  data: SceneDataSchema,
-  audio: AudioSegmentSchema.optional(),   // populated by save_video_config auto-merge
-})
-
-export const VideoConfigSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  aspectRatio: z.enum(["9:16", "16:9", "1:1", "4:5"]),
-  fps: z.number().default(30),
-  scenes: z.array(SceneSchema),
-})
-
-export type VideoConfig = z.infer<typeof VideoConfigSchema>
-export type Scene = z.infer<typeof SceneSchema>
-export type AudioSegment = z.infer<typeof AudioSegmentSchema>
-```
-
-Scene components (`IntroScene`, `TitleScene`, etc.) cast `scene.data` to their specific local interface using `as unknown as IntroData` etc. All Remotion scene components include null-safe access for optional fields (`data.items ?? []`, `config.fps ?? 30`).
+Built dynamically per request in `src/lib/ai/system-prompt.ts`. Provides:
+1. Ordered pipeline instructions (research → narration → image → code → save)
+2. Segment count rules (2–5 narration segments, total ≤ 60 s)
+3. Aspect ratio default (`9:16` unless user specifies)
+4. Current project context (if a video already exists, can regenerate from scratch)
 
 ---
 
 ## Chat UI
 
-The chat panel is a **custom component** — no Vercel AI Elements. Lives at `src/components/studio/ChatPanel.tsx`.
+The chat panel lives at `src/components/studio/ChatPanel.tsx`. It uses `useChat` from `@ai-sdk/react` via `StudioClient`, renders `message.parts`, and shows tool call states with human-readable labels.
 
-### ChatPanel
-
-```typescript
-// Props received from StudioClient
-interface ChatPanelProps {
-  messages: UIMessage[]
-  onSend: (text: string) => void
-  isStreaming: boolean
-  error?: Error
-}
-
-// Rendering message parts
-message.parts.map((part) => {
-  if (part.type === "text") return <TextBubble text={part.text} />
-  if (part.type === "dynamic-tool") return <ToolCallBubble toolName={part.toolName} isDone={part.state === "output-available"} />
-  if (part.type.startsWith("tool-")) return <ToolCallBubble toolName={part.type.slice(5)} isDone={part.state === "output-available"} />
-})
-```
-
-### Tool call labels shown in chat
+### Tool call labels
 
 | Tool | Pending label | Done label |
 |---|---|---|
 | `research_topic` | Researching topic… | Research complete |
-| `generate_video_script` | Writing video script… | Script ready |
-| `generate_audio_segment` | Generating audio… | Audio created |
-| `save_video_config` | Saving video… | Video saved |
-| `patch_scene` | Updating scene… | Scene updated |
-| `regenerate_audio_segment` | Regenerating audio… | Audio updated |
+| `generate_narration` | Generating narration… | Narration ready |
+| `generate_image` | Generating image… | Image ready |
+| `generate_video_code` | Writing video code… | Code generated |
+| `save_video_code` | Saving video… | Video saved |
 
 ### StudioClient wiring
 
 ```typescript
-// useChat with DefaultChatTransport (AI SDK v6)
 const { messages, sendMessage, status, error } = useChat({
   messages: initialMessages,
   transport: new DefaultChatTransport({ api: "/api/chat", body: { projectId } }),
@@ -381,9 +300,9 @@ useEffect(() => {
   if (status === "streaming" || status === "submitted") { wasActiveRef.current = true; return }
   if (status === "ready" && wasActiveRef.current) {
     wasActiveRef.current = false
-    setTimeout(() => fetch(`/api/projects/${id}`).then(...setConfig), 600)
+    setTimeout(() => fetch(`/api/projects/${id}`).then(...).then(setConfig), 600)
   }
 }, [status])
 ```
 
-Scroll is implemented with a native `overflow-y-auto` div and `el.scrollTop = el.scrollHeight` — not shadcn `ScrollArea` (which breaks `scrollIntoView`).
+Tool call states are preserved on refresh: `onFinish` in `/api/chat` converts `type: "tool-call"` parts to `type: "dynamic-tool"` with `state: "output-available"` before saving to `chat_messages`.

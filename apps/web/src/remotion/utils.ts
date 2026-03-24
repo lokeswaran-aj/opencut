@@ -1,4 +1,4 @@
-import type { AspectRatio } from "@repo/types"
+import type { AspectRatio, VideoConfig } from "@repo/types"
 
 export const ASPECT_RATIO_DIMENSIONS: Record<
   AspectRatio,
@@ -10,8 +10,6 @@ export const ASPECT_RATIO_DIMENSIONS: Record<
   "4:5": { width: 1080, height: 1350 },
 }
 
-export function getTotalDurationInFrames(
-  scenes: { durationInFrames: number }[]
-): number {
-  return scenes.reduce((sum, s) => sum + (Number(s.durationInFrames) || 0), 0)
+export function getTotalDurationInFrames(config: VideoConfig): number {
+  return Math.max(config.durationInFrames, 1)
 }

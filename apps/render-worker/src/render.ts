@@ -83,10 +83,16 @@ export async function runRenderJob(jobId: string): Promise<void> {
 
     // 3. Select the composition with our config as input props
     await setJobStage(jobId, "Selecting composition", 20)
+    const durationInFrames = Math.max(
+      Math.floor(((config.durationMs ?? 3000) * (config.fps ?? 30)) / 1000),
+      1
+    )
     const composition = await selectComposition({
       serveUrl: bundled,
       id: "VideoComposition",
       inputProps: config,
+      // Override duration so selectComposition doesn't default to placeholder value
+      timeoutInMilliseconds: 30000,
     })
 
     // 4. Render to a temp file

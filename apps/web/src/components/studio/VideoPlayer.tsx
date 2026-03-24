@@ -1,16 +1,13 @@
 "use client"
 
-import { useEffect, useMemo } from "react"
+import { useMemo } from "react"
 import { Player } from "@remotion/player"
-import { preloadAudio } from "@remotion/preload"
 import type { ComponentType } from "react"
 import type { VideoConfig } from "@repo/types"
 import { VideoComposition } from "@/remotion/VideoComposition"
-
-// Remotion's Player types inputProps as Record<string, unknown>; VideoConfig
-// satisfies that contract at runtime since it's a plain object.
-const TypedComposition = VideoComposition as unknown as ComponentType<Record<string, unknown>>
 import { ASPECT_RATIO_DIMENSIONS, getTotalDurationInFrames } from "@/remotion/utils"
+
+const TypedComposition = VideoComposition as unknown as ComponentType<Record<string, unknown>>
 
 interface VideoPlayerProps {
   config: VideoConfig
@@ -20,22 +17,9 @@ interface VideoPlayerProps {
 export function VideoPlayer({ config, className }: VideoPlayerProps) {
   const { width, height } =
     ASPECT_RATIO_DIMENSIONS[config.aspectRatio] ?? ASPECT_RATIO_DIMENSIONS["9:16"]
-  const durationInFrames = useMemo(
-    () => getTotalDurationInFrames(config.scenes),
-    [config.scenes]
-  )
-  const inputProps = useMemo(() => config, [config])
 
-  // Preload all audio files as soon as the config is available so the browser
-  // has time to buffer them before each scene starts playing.
-  useEffect(() => {
-    const unloaders = config.scenes
-      .filter((s) => s.audio?.publicUrl)
-      .map((s) => preloadAudio(s.audio!.publicUrl))
-    return () => {
-      unloaders.forEach((unload) => unload())
-    }
-  }, [config.scenes])
+  const durationInFrames = useMemo(() => getTotalDurationInFrames(config), [config])
+  const inputProps = useMemo(() => config as unknown as Record<string, unknown>, [config])
 
   if (!durationInFrames || isNaN(durationInFrames)) return null
 
@@ -51,7 +35,7 @@ export function VideoPlayer({ config, className }: VideoPlayerProps) {
         style={{ width: "100%", height: "100%" }}
         controls
         loop
-        bufferStateDelayInMilliseconds={300}
+        bufferStateDelayInMilliseconds={1500}
       />
     </div>
   )

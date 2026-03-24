@@ -60,9 +60,9 @@ export async function POST(req: Request) {
   const model = isEdit ? getEditModel() : getGenerationModel()
 
   // Mark project as actively generating BEFORE streaming starts so the UI
-  // can show the loading state. save_video_config will set it back to "ready"
+  // can show the loading state. save_timeline will set it back to "ready"
   // when done. We must NOT touch the status inside onFinish (it runs after
-  // save_video_config has already written "ready").
+  // save_timeline has already written "ready").
   await db
     .update(projects)
     .set({ status: "generating", updatedAt: new Date() })
@@ -73,7 +73,8 @@ export async function POST(req: Request) {
     system: buildSystemPrompt(existingConfig),
     messages: await convertToModelMessages(messages),
     tools: makeTools(projectId),
-    stopWhen: stepCountIs(15),
+    // research + plan + (image + audio) × 8 scenes + style + save = ~20 steps max
+    stopWhen: stepCountIs(25),
     onFinish: async ({ response }) => {
       // Persist the new user message
       if (lastUserMessage) {
@@ -124,7 +125,7 @@ export async function POST(req: Request) {
           parts: uiParts,
         })
       }
-      // NOTE: do NOT update project status here — save_video_config already
+      // NOTE: do NOT update project status here — save_timeline already
       // set it to "ready", and touching it again would overwrite that.
     },
   })

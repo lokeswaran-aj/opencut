@@ -1,11 +1,5 @@
 # Tech Stack & Packages
 
-## Package Versions
-
-All confirmed latest as of March 2026. Pin exact versions in `package.json` (no `^` prefix on Remotion packages — they must all be the exact same version).
-
----
-
 ## Monorepo Root
 
 ```json
@@ -15,7 +9,10 @@ All confirmed latest as of March 2026. Pin exact versions in `package.json` (no 
   "scripts": {
     "dev": "pnpm --parallel -r dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "docker:start": "docker compose up -d",
+    "docker:stop": "docker compose down",
+    "docker:clean": "docker compose down -v"
   }
 }
 ```
@@ -42,6 +39,8 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 }
 ```
 
+Key exports: `VideoConfig`, `VideoConfigSchema`, `AudioAsset`, `ImageAsset`, `AspectRatio`, `ASPECT_RATIOS`
+
 ---
 
 ## `apps/web`
@@ -50,15 +49,14 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 
 | Package | Version | Purpose |
 |---|---|---|
-| `next` | `^16.1.6` | App framework. App Router, async params, proxy.ts |
-| `react` | `^19.0.0` | UI |
-| `react-dom` | `^19.0.0` | DOM rendering |
+| `next` | `^16.2.0` | App framework — App Router, async params, proxy.ts |
+| `react` | `^19.2.0` | UI |
+| `react-dom` | `^19.2.0` | DOM rendering |
 | `typescript` | `^5.8.0` | Type checking |
 
-**Next.js 16 notes used in this project:**
-- `params` in route handlers and page components is now a `Promise` → always `await params`
+**Next.js 16 notes:**
+- `params` in route handlers and page components is a `Promise` → always `await params`
 - `proxy.ts` lives at the project root alongside `app/` (not inside `src/`)
-- `PageProps<'/path/[param]'>` helper type for type-safe page props
 
 ---
 
@@ -66,32 +64,34 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 
 | Package | Version | Purpose |
 |---|---|---|
-| `ai` | `^6.0.134` | AI SDK v6 core — `streamText`, `generateObject`, `tool`, `DefaultChatTransport` |
-| `@ai-sdk/anthropic` | `^3.0.63` | Anthropic provider |
-| `@ai-sdk/google-vertex` | latest | Google Vertex AI provider — Gemini models via service account |
-| `@ai-sdk/react` | `^3.0.136` | `useChat` hook — installed separately (not bundled with `ai` in v6) |
+| `ai` | `^6.0.0` | AI SDK v6 core — `streamText`, `generateText`, `tool`, `DefaultChatTransport` |
+| `@ai-sdk/google-vertex` | latest | Google Vertex AI provider — Gemini models + Imagen 3 image generation |
+| `@ai-sdk/react` | `^3.0.0` | `useChat` hook |
 
-**Provider selection** is controlled by `AI_PROVIDER` env var (`"anthropic"` default, `"vertex"` for Gemini). All model logic lives in `src/lib/ai/model.ts` which exports `getGenerationModel()` and `getEditModel()`.
+**Provider:** Google Vertex AI exclusively. No Anthropic or OpenAI keys required.
 
-| Env var | Default (Anthropic) | Default (Vertex) |
-|---|---|---|
-| `AI_GENERATION_MODEL` | `claude-3-5-sonnet-20241022` | `gemini-2.5-pro` |
-| `AI_EDIT_MODEL` | `claude-3-5-haiku-20241022` | `gemini-2.5-flash` |
+| Env var | Value |
+|---|---|
+| `GOOGLE_VERTEX_PROJECT` | Your GCP project ID |
+| `GOOGLE_VERTEX_LOCATION` | `global` (required for Gemini 3.1 preview models) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to service account JSON (local dev) |
+| `GOOGLE_CLIENT_EMAIL` | Service account email (deployment) |
+| `GOOGLE_PRIVATE_KEY` | Service account private key (deployment) |
 
-**Google Vertex AI credentials** — choose one:
-- **Local dev**: set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`
-- **Deployment**: set `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY` (+ optional `GOOGLE_PRIVATE_KEY_ID`) extracted from the service account JSON
+**Models used:**
 
-**AI SDK v6 key changes from v4:**
-- Model identifiers: `anthropic("claude-3-5-sonnet-20241022")` — same pattern, new model names
-- `stopWhen: stepCountIs(N)` replaces `maxSteps`
-- `toUIMessageStreamResponse()` replaces `toDataStreamResponse()`
-- `message.parts` replaces `message.toolInvocations` for tool call rendering
-- `useChat` no longer returns `input`/`handleInputChange`/`handleSubmit` — manage input state manually
-- Transport config: `new DefaultChatTransport({ api, body })` replaces top-level `api`/`body` options
-- `messages: initialMessages` option (renamed from `initialMessages` in v5)
-- `UIMessage` has no `content` field — `parts` array only
-- Tool invocations stream as `type: "dynamic-tool"` parts for server-side tools
+| Use case | Model |
+|---|---|
+| Remotion code generation | `gemini-3.1-pro-preview-05-06` |
+| Lightweight edits | `gemini-3.1-flash-lite-preview-05-06` |
+| Image generation | `imagen-3.0-generate-001` (via `experimental_generateImage`) |
+
+**AI SDK v6 key patterns used in this project:**
+- `stopWhen: stepCountIs(25)` for multi-step tool calling
+- `toUIMessageStreamResponse()` for SSE chat streaming
+- `message.parts` for rendering tool invocations in the chat UI
+- `new DefaultChatTransport({ api, body })` for `useChat` transport config
+- `UIMessage` uses `parts` array only — no `content` field
 
 ---
 
@@ -99,20 +99,14 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 
 | Package | Version | Purpose |
 |---|---|---|
-| `@clerk/nextjs | ^7.0.6` | Auth — prebuilt UI, server helpers, route protection |
+| `@clerk/nextjs` | `^7.0.6` | Auth — prebuilt UI, server helpers, route protection |
 
-**Why Clerk over Better Auth:**
-- Zero DB tables for auth — Clerk manages users in their cloud
-- Prebuilt `<SignIn />`, `<SignUp />`, `<UserButton />` components work out of the box
-- `auth()` server helper gives `userId` instantly in any route handler or server component
-- Google OAuth configured in Clerk dashboard — no client ID/secret in app env vars
-- Saves significant setup time for a hackathon
-
-**Key integration points:**
+**Integration points:**
 - `proxy.ts` — `clerkMiddleware()` protects `/dashboard` and `/studio/*`
 - `<ClerkProvider>` wraps root layout
-- `/sign-in` and `/sign-up` pages use Clerk's prebuilt components
-- `@clerk/elements` + shadcn for custom-styled auth forms if needed
+- `auth()` server helper gives `userId` in route handlers and server components
+- `useUser()` hook in client components — `isSignedIn` for conditional rendering
+- Google OAuth configured in Clerk dashboard — no client ID/secret in app env vars
 
 ---
 
@@ -121,39 +115,54 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 | Package | Version | Purpose |
 |---|---|---|
 | `drizzle-orm` | `^0.44.0` | ORM — `pgTable`, `jsonb`, relations, queries |
-| `drizzle-kit` | `^0.31.5` | Migrations, studio, codegen |
-| `postgres` | `^3.4.5` | postgres.js driver (faster than `pg` for serverless-style use) |
+| `drizzle-kit` | `^0.31.5` | Schema push, migrations, studio |
+| `postgres` | `^3.4.5` | postgres.js driver |
+| `dotenv-cli` | latest | Load `.env.local` in `db:push` / `db:generate` scripts |
+
+**Scripts:**
+```bash
+pnpm --filter web db:push      # push schema to DB (uses dotenv-cli to load .env.local)
+pnpm --filter web db:generate  # generate migration files
+pnpm --filter web db:studio    # open Drizzle Studio
+```
 
 ---
 
-### Video (Preview — browser only)
+### Video (preview — browser only)
 
 | Package | Version | Purpose |
 |---|---|---|
-| `remotion` | `4.0.438` | Core Remotion (frame rendering, `<Audio>`, `<AbsoluteFill>`) |
+| `remotion` | `4.0.438` | Core — `<Audio>`, `<AbsoluteFill>`, `<Sequence>`, `<Img>`, `spring`, `interpolate` |
 | `@remotion/player` | `4.0.438` | `<Player>` component for in-browser preview |
+| `@remotion/preload` | `4.0.438` | `preloadAudio()`, `preloadImage()` — eager asset loading |
+| `@remotion/shapes` | `4.0.438` | `<Rect>`, `<Circle>`, `<Triangle>`, etc. — injected as globals |
+| `@remotion/transitions` | `4.0.438` | `<TransitionSeries>`, `fade`, `slide`, `wipe`, `flip`, `clockWipe` — injected as globals |
+| `@babel/standalone` | `^7.29.0` | Client-side TSX compiler for AI-generated Remotion code |
 
-> All Remotion packages must be pinned to the **exact same version**. Remove `^` prefix.
+> All Remotion packages must be pinned to the **exact same version** — no `^` prefix.
+
+**How the compiler works (`src/remotion/compiler.ts`):**
+1. Strips import statements from the AI-generated TSX string
+2. Wraps it in a `const DynamicOverlay = () => { ... }` shell
+3. Calls `Babel.transform(..., { presets: ["react", "typescript"] })`
+4. Executes via `new Function(...)` with all Remotion globals pre-injected
+5. Returns `{ Component, error }` — `VideoComposition` renders `<Component />` if no error
 
 ---
 
 ### UI
 
-| Package / Registry | Version | Purpose |
-|---|---|---|
-| `tailwindcss` | `^4.0.0` | CSS utility framework (v4 — CSS-first via `@import "tailwindcss"` in globals.css) |
-| `shadcn/ui` | components | Accessible UI primitives — `npx shadcn@latest add <component>` |
+| Package | Purpose |
+|---|---|
+| `tailwindcss` `^4.0.0` | CSS utility framework (v4 — CSS-first via `@import "tailwindcss"`) |
+| shadcn/ui components | Accessible UI primitives |
+| `@ai-sdk/ai-elements` (Vercel) | `PromptInput`, `Conversation`, `Message` — AI chat UI |
+| `sonner` | Toast notifications (`<Toaster richColors />`) |
+| `lucide-react` | Icon set |
 
-**Installed shadcn components:** `button`, `textarea`, `scroll-area`, `badge`, `separator`
+**Installed shadcn components:** `button`, `textarea`, `scroll-area`, `badge`, `separator`, `tooltip`, `hover-card`, `dialog`
 
-**Chat UI** is built as a custom `ChatPanel` component (`src/components/studio/ChatPanel.tsx`). It uses `useChat` from `@ai-sdk/react` via `StudioClient`, renders `message.parts`, and handles `type: "dynamic-tool"` parts with human-readable tool call indicators (pending spinner → done checkmark).
-
-**Planned (not yet installed):**
-- `framer-motion` — animations for tool cards, page transitions
-- `lucide-react` — icon set
-- `zustand` — client state for render progress store
-
-**Tailwind v4 note:** Config is via `@import "tailwindcss"` in `app/globals.css`, not `tailwind.config.js`.
+**Tailwind v4 note:** Config is via `@import "tailwindcss"` in `app/globals.css` — no `tailwind.config.js`.
 
 ---
 
@@ -161,26 +170,41 @@ Shared Zod schemas and TypeScript types consumed by both apps.
 
 | Package | Version | Purpose |
 |---|---|---|
-| `@aws-sdk/client-s3` | `^3.1014.0` | Cloudflare R2 (S3-compatible) — upload audio + video |
-| `@aws-sdk/s3-request-presigner` | `^3.1014.0` | Generate presigned URLs for audio serving |
-| `@mendable/firecrawl-js` | `^4.16.0` | Firecrawl SDK — `search()`, `scrape()`, `extract()` |
-| `elevenlabs` | `^1.59.0` | ElevenLabs SDK — TTS (`textToSpeech.convert`) |
+| `@aws-sdk/client-s3` | `^3.1014.0` | Cloudflare R2 (S3-compatible) — upload audio, images, and video |
+| `@aws-sdk/s3-request-presigner` | `^3.1014.0` | Presigned URLs (used internally) |
+| `@mendable/firecrawl-js` | `^4.16.0` | Firecrawl SDK — `search()`, `scrape()` |
+| `elevenlabs` | `^1.59.0` | ElevenLabs SDK — `textToSpeech.convert()` |
+
+**R2 environment variables:**
+
+| Env var | Description |
+|---|---|
+| `CLOUDFLARE_R2_ACCOUNT_ID` | Cloudflare account ID |
+| `CLOUDFLARE_R2_ACCESS_KEY_ID` | R2 API token key ID |
+| `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | R2 API token secret |
+| `CLOUDFLARE_R2_BUCKET_NAME` | Bucket name (e.g. `opencut-assets`) |
+| `CLOUDFLARE_R2_PUBLIC_URL` | Public R2 domain (e.g. `https://pub-xxx.r2.dev`) |
+
+**CORS required on R2 bucket** (via Cloudflare dashboard → R2 → Settings → CORS Policy):
+```json
+[{ "AllowedOrigins": ["*"], "AllowedMethods": ["GET", "HEAD"], "AllowedHeaders": ["*"], "MaxAgeSeconds": 3600 }]
+```
 
 ---
 
 ### Utilities
 
-| Package | Version | Purpose |
-|---|---|---|
-| `zod` | `^3.25.0` | Schema validation for tool inputs/outputs and VideoConfig |
-| `nanoid` | `^5.0.0` | Short unique IDs for scene IDs, audio segment IDs |
-| `@repo/types` | `workspace:*` | Shared VideoConfig, Scene, AudioSegment types |
+| Package | Purpose |
+|---|---|
+| `zod` `^3.25.0` | Schema validation for tool inputs/outputs and VideoConfig |
+| `nanoid` `^5.0.0` | Short unique IDs |
+| `@repo/types` `workspace:*` | Shared VideoConfig, AudioAsset, ImageAsset types |
 
 ---
 
 ## `apps/render-worker`
 
-Bun + Hono service. Handles final video export only.
+Bun + Hono service. Handles final video export only — not exposed to the browser.
 
 ### Runtime
 
@@ -188,17 +212,11 @@ Bun + Hono service. Handles final video export only.
 |---|---|---|
 | `bun` | `^1.2.0` | JavaScript runtime — officially supported by Remotion 4.0.88+ |
 
-**Known Bun + Remotion caveats (minor):**
-- `lazyComponent` prop disabled in Bun — not used in render-worker
-- Script may not auto-quit — handled with explicit `process.exit(0)` after render completes
-
----
-
 ### Packages
 
 | Package | Version | Purpose |
 |---|---|---|
-| `hono` | `^4.0.0` | Web framework for Bun — request routing, SSE streaming |
+| `hono` | `^4.0.0` | Web framework for Bun |
 | `remotion` | `4.0.438` | Core (must match `apps/web`) |
 | `@remotion/bundler` | `4.0.438` | `bundle()` — webpack bundle of Remotion compositions |
 | `@remotion/renderer` | `4.0.438` | `renderMedia()` — Chromium + FFmpeg render pipeline |
@@ -211,7 +229,7 @@ Bun + Hono service. Handles final video export only.
 
 ## Infrastructure
 
-### Docker Compose
+### Docker Compose (PostgreSQL only)
 
 ```yaml
 services:
@@ -227,64 +245,29 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  render-worker:
-    build:
-      context: ./apps/render-worker
-      dockerfile: Dockerfile
-    ports:
-      - "3001:3001"
-    environment:
-      - DATABASE_URL=postgresql://opencut:opencut@postgres:5432/opencut
-      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
-      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
-      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
-      - R2_BUCKET=${R2_BUCKET}
-    depends_on:
-      - postgres
-
 volumes:
   postgres_data:
 ```
 
-### Cloudflare R2
-
-R2 configuration uses the S3-compatible API. Set the endpoint as:
-```
-https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com
-```
-
-Bucket structure:
-```
-opencut-bucket/
-├── audio/
-│   └── {projectId}/
-│       ├── {sceneId}.mp3       (narration)
-│       └── sfx-{type}.mp3     (sound effects)
-└── exports/
-    └── {projectId}/
-        └── {jobId}.mp4         (final rendered video)
-```
+The render-worker runs locally during development (`pnpm --filter render-worker dev`).
 
 ---
 
-## Environment Variables
+## Full Environment Variables Reference
 
-`apps/web/.env.local`:
+### `apps/web/.env.local`
+
 ```bash
 # Database
 DATABASE_URL=postgresql://opencut:opencut@localhost:5432/opencut
 
-# Clerk — get from clerk.com dashboard
+# Clerk
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
 NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
-NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard
-NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard
-# Google OAuth is configured in the Clerk dashboard — no env vars needed here
-
-# Anthropic
-ANTHROPIC_API_KEY=
+NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard
+NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/dashboard
 
 # ElevenLabs
 ELEVENLABS_API_KEY=
@@ -292,27 +275,44 @@ ELEVENLABS_API_KEY=
 # Firecrawl
 FIRECRAWL_API_KEY=
 
-# Cloudflare R2
-R2_ACCOUNT_ID=
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-R2_BUCKET=opencut-bucket
-R2_PUBLIC_URL=https://pub-xxx.r2.dev     # public R2 domain (optional)
+# Google Vertex AI (Gemini models + Imagen 3)
+GOOGLE_VERTEX_PROJECT=your-gcp-project-id
+GOOGLE_VERTEX_LOCATION=global
+# Local dev — service account JSON file:
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+# Deployment — individual fields from service account JSON:
+GOOGLE_CLIENT_EMAIL=
+GOOGLE_PRIVATE_KEY=
+GOOGLE_PRIVATE_KEY_ID=
 
-# Render Worker
-RENDER_WORKER_URL=http://localhost:3001
-RENDER_WORKER_SECRET=                    # shared secret for auth between web + worker
+# Cloudflare R2
+CLOUDFLARE_R2_ACCOUNT_ID=
+CLOUDFLARE_R2_ACCESS_KEY_ID=
+CLOUDFLARE_R2_SECRET_ACCESS_KEY=
+CLOUDFLARE_R2_BUCKET_NAME=
+CLOUDFLARE_R2_PUBLIC_URL=https://pub-xxx.r2.dev
+
+# Render worker
+RENDER_WORKER_URL=http://localhost:8787
+RENDER_WORKER_SECRET=some-shared-secret
+
+# Usage limits (account-level cumulative counts)
+FREE_TIER_MAX_PROJECTS=5
+FREE_TIER_MAX_RENDERS=10
+FREE_TIER_MAX_MESSAGES=50
 ```
 
-`apps/render-worker/.env`:
+### `apps/render-worker/.env`
+
 ```bash
 DATABASE_URL=postgresql://opencut:opencut@localhost:5432/opencut
-R2_ACCOUNT_ID=
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-R2_BUCKET=opencut-bucket
-RENDER_WORKER_SECRET=
-PORT=3001
+CLOUDFLARE_R2_ACCOUNT_ID=
+CLOUDFLARE_R2_ACCESS_KEY_ID=
+CLOUDFLARE_R2_SECRET_ACCESS_KEY=
+CLOUDFLARE_R2_BUCKET_NAME=
+CLOUDFLARE_R2_PUBLIC_URL=
+RENDER_WORKER_SECRET=some-shared-secret
+PORT=8787
 ```
 
 ---
@@ -320,46 +320,19 @@ PORT=3001
 ## App Routes (Next.js)
 
 ```
-/                              Landing page (marketing)
+/                              Landing page
 /sign-in                       Clerk <SignIn /> component
 /sign-up                       Clerk <SignUp /> component
-/dashboard                     Project grid — list, create, delete projects (protected)
+/dashboard                     Project grid — list, create, delete (protected)
 /studio/[projectId]            Main editor (protected)
-  ├─ Left panel:   ChatPanel (useChat + tool invocation cards)
+  ├─ Left panel:   ChatPanel (useChat + tool call cards)
   └─ Right panel:  VideoPreviewPanel — Remotion <Player> + Export button
 
-/api/chat                      POST — AI streaming endpoint
-/api/projects                  GET / POST (POST checks usage limit)
+/api/chat                      POST — AI streaming endpoint (SSE)
+/api/projects                  GET / POST
 /api/projects/[id]             GET / PUT / DELETE
-/api/audio/[id]                GET — R2 presigned redirect
-/api/render                    POST — trigger render
-/api/render/[jobId]/stream     GET — SSE render progress proxy
-/api/usage                     GET — videosGenerated / maxVideos for current user
+/api/projects/[id]/export      POST — trigger render job
+/api/projects/[id]/render-job  GET — poll render job status
+/api/projects/[id]/download    GET — force-download proxy for exported MP4
+/api/usage                     GET — usage counts vs limits
 ```
-
-`proxy.ts` (Next.js 16) protects `/dashboard` and `/studio/*` via `clerkMiddleware`. All `/api/*` routes verify `userId` via `auth()` inside the handler.
-
----
-
-## Remotion Compositions
-
-Remotion entry point: `apps/web/remotion/index.ts`
-
-```
-apps/web/remotion/
-├── index.ts                   registerRoot(Root)
-├── Root.tsx                   <Composition> definitions
-└── compositions/
-    ├── VideoComposition.tsx   Main composition — renders VideoConfig
-    └── scenes/
-        ├── IntroScene.tsx
-        ├── TitleScene.tsx
-        ├── BulletsScene.tsx
-        ├── QuoteScene.tsx
-        ├── StatScene.tsx
-        └── OutroScene.tsx
-```
-
-`VideoComposition` receives `VideoConfig` as `inputProps`, iterates over `scenes`, and renders the matching scene component using Remotion's `<Sequence>` for timing. Audio segments are rendered with `<Audio src={segment.url} startFrom={segment.startFrame} />`.
-
-Scene components have layout variants for each aspect ratio (9:16, 16:9, 1:1, 4:5) selected via the `aspectRatio` field on the config.

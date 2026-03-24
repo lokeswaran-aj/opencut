@@ -1,159 +1,118 @@
-# Turborepo starter
+# Opencut
 
-This Turborepo starter is maintained by the Turborepo core team.
+AI-powered short-form video generation platform. Chat with an AI to generate complete, animated videos for TikTok, Instagram Reels, and YouTube Shorts — no templates, full creative freedom.
 
-## Using this example
+## How it works
 
-Run the following command:
+1. Describe a topic or paste a URL in the chat
+2. The AI researches the topic via Firecrawl, generates narration audio via ElevenLabs, and optionally generates images via Vertex AI Imagen 3
+3. The AI writes a complete Remotion React component from scratch — no fixed templates
+4. The component is compiled in the browser using Babel and rendered live in the Remotion Player
+5. Export and download as an MP4
 
-```sh
-npx create-turbo@latest
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend + API | Next.js 16 (App Router) |
+| AI | Google Vertex AI — Gemini 3.1 Pro (code gen) / Flash Lite (edits) |
+| Video (preview) | Remotion Player + `@babel/standalone` (client-side TSX compiler) |
+| Video (export) | Remotion `renderMedia()` in `apps/render-worker` (Bun + Hono) |
+| Audio | ElevenLabs TTS SDK |
+| Images | Vertex AI Imagen 3 (optional, AI decides) |
+| Research | Firecrawl JS SDK |
+| Auth | Clerk (Google SSO) |
+| Database | PostgreSQL + Drizzle ORM |
+| Storage | Cloudflare R2 (audio + exported MP4s) |
+
+## Monorepo structure
+
+```
+opencut/
+├── apps/
+│   ├── web/              # Next.js 16 — main application
+│   └── render-worker/    # Bun + Hono — video export service
+├── packages/
+│   └── types/            # Shared Zod schemas + TypeScript types
+└── docs/                 # Architecture, API, agent, and DB docs
 ```
 
-## What's inside?
+## Getting started
 
-This Turborepo includes the following packages/apps:
+### Prerequisites
 
-### Apps and Packages
+- Node.js 20+, pnpm 10+, Bun 1.2+
+- Docker (for PostgreSQL)
+- API keys: Clerk, ElevenLabs, Firecrawl, Google Vertex AI, Cloudflare R2
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+### 1. Install dependencies
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```bash
+pnpm install
 ```
 
-Without global `turbo`, use your package manager:
+### 2. Start PostgreSQL
 
-```sh
-cd my-turborepo
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
+```bash
+pnpm docker:start
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+### 3. Configure environment variables
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo build --filter=docs
+```bash
+cp apps/web/.env.example apps/web/.env.local
+cp apps/render-worker/.env.example apps/render-worker/.env
 ```
 
-Without global `turbo`:
+Fill in your API keys. See [docs/techstack.md](docs/techstack.md) for details on each variable.
 
-```sh
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
+### 4. Push database schema
+
+```bash
+pnpm --filter web db:push
 ```
 
-### Develop
+### 5. Start development servers
 
-To develop all apps and packages, run the following command:
+```bash
+# In one terminal — Next.js web app
+pnpm --filter web dev
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
+# In another terminal — render worker
+pnpm --filter render-worker dev
 ```
 
-Without global `turbo`, use your package manager:
+Open [http://localhost:3000](http://localhost:3000).
 
-```sh
-cd my-turborepo
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
+### Cloudflare R2 CORS
+
+Your R2 bucket must have a CORS policy to allow the browser to load audio and images. In the Cloudflare dashboard → R2 → your bucket → Settings → CORS Policy:
+
+```json
+[
+  {
+    "AllowedOrigins": ["*"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "MaxAgeSeconds": 3600
+  }
+]
 ```
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+## Free tier limits
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+| Resource | Default limit | Env var |
+|---|---|---|
+| Projects | 5 per account | `FREE_TIER_MAX_PROJECTS` |
+| Render exports | 10 per account | `FREE_TIER_MAX_RENDERS` |
+| Chat messages | 50 per account | `FREE_TIER_MAX_MESSAGES` |
 
-```sh
-turbo dev --filter=web
-```
+Limits are derived at query time from existing table rows — no separate counters table.
 
-Without global `turbo`:
+## Documentation
 
-```sh
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+- [Architecture](docs/architecture.md) — system design, data flow, live preview vs export
+- [Tech Stack](docs/techstack.md) — all packages, versions, and environment variables
+- [AI Agents & Tools](docs/agents.md) — tool definitions, AI pipeline, prompt engineering
+- [API Reference](docs/api.md) — all Next.js and render-worker routes
+- [Database](docs/database.md) — Drizzle schema, ER diagram, and usage limit logic

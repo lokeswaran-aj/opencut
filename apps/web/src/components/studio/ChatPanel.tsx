@@ -18,11 +18,10 @@ import {
 
 const TOOL_LABELS: Record<string, { pending: string; done: string }> = {
   research_topic: { pending: "Researching topic…", done: "Research complete" },
-  generate_video_script: { pending: "Writing video script…", done: "Script ready" },
-  generate_audio_segment: { pending: "Generating audio…", done: "Audio created" },
-  save_video_config: { pending: "Saving video…", done: "Video saved" },
-  patch_scene: { pending: "Updating scene…", done: "Scene updated" },
-  regenerate_audio_segment: { pending: "Regenerating audio…", done: "Audio updated" },
+  generate_narration: { pending: "Generating narration…", done: "Audio ready" },
+  generate_image: { pending: "Generating image…", done: "Image ready" },
+  generate_video_code: { pending: "Writing Remotion component…", done: "Code generated" },
+  save_video_code: { pending: "Saving video…", done: "Video ready" },
 }
 
 function ToolCallBubble({ toolName, isDone }: { toolName: string; isDone: boolean }) {

@@ -15,41 +15,21 @@ Schema lives in `apps/web/src/db/schema.ts`. Migrations live in `apps/web/drizzl
 
 ## Usage Limits
 
-No separate table. The generation count is derived directly from the `projects` table by counting rows with terminal statuses (`ready`, `rendering`, `done`) for a given `userId`. The cap is a single env var.
+No separate table. Limits are derived at query time by counting rows in existing tables. Caps are env vars.
 
-```typescript
-// apps/web/src/lib/limits.ts
-import { db } from "@/db"
-import { projects } from "@/db/schema"
-import { and, eq, inArray, count } from "drizzle-orm"
-
-const MAX_VIDEOS = parseInt(process.env.FREE_TIER_MAX_VIDEOS ?? "5")
-
-export async function getUsage(userId: string) {
-  const [row] = await db
-    .select({ generated: count() })
-    .from(projects)
-    .where(
-      and(
-        eq(projects.userId, userId),
-        inArray(projects.status, ["ready", "rendering", "done"])
-      )
-    )
-  return {
-    videosGenerated: row.generated,
-    maxVideos: MAX_VIDEOS,
-    canGenerate: row.generated < MAX_VIDEOS,
-  }
-}
-```
+| Resource | Table | Env var |
+|---|---|---|
+| Projects | `projects` (any status) | `FREE_TIER_MAX_PROJECTS=5` |
+| Render exports | `render_jobs` (any status) | `FREE_TIER_MAX_RENDERS=10` |
+| Chat messages | `chat_messages` (role = user) | `FREE_TIER_MAX_MESSAGES=50` |
 
 **Why this is better than a separate `user_limits` table:**
 - Always accurate — no counter drift if a job fails or retries
 - No upsert on first use, no increment on completion
 - Zero extra migrations
-- Adjust the cap by changing one env var: `FREE_TIER_MAX_VIDEOS=10`
+- Adjust any cap with one env var change
 
-The `GET /api/usage` endpoint and the `POST /api/projects` limit check both call `getUsage(userId)`.
+The `GET /api/usage` endpoint and the `POST /api/projects` limit check both query these tables live.
 
 ---
 
@@ -133,7 +113,7 @@ export const researchReports = pgTable("research_reports", {
 
 ### `audio_files`
 
-Metadata for every audio file generated for a project. Actual files are stored in Cloudflare R2.
+Metadata for every narration audio file generated for a project. Actual `.mp3` files are stored in Cloudflare R2. URLs from this table are passed directly to the AI as `AudioAsset` objects, which the AI embeds as constants in the generated Remotion code.
 
 ```typescript
 export const audioFiles = pgTable("audio_files", {
@@ -276,6 +256,7 @@ erDiagram
         text text_hash
         timestamp created_at
     }
+
 
     chat_messages {
         uuid id PK

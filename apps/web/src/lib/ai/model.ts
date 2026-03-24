@@ -122,7 +122,7 @@ export function getGenerationModel(): LanguageModel {
 }
 
 /**
- * Returns the lightweight model used for edits (patch_scene, regenerate_audio).
+ * Returns the lightweight model used for edits (edit_narration, generate_style_component).
  * Controlled by AI_PROVIDER + AI_EDIT_MODEL.
  */
 export function getEditModel(): LanguageModel {
