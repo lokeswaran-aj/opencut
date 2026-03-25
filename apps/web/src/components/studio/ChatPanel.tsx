@@ -57,9 +57,9 @@ const TOOL_META: Record<string, ToolMeta> = {
   },
   generate_video_code: {
     icon: <Code2 className="size-3" />,
-    pendingLabel: "Writing Remotion component…",
-    doneLabel: "Component generated",
-    detail: () => "Compiling audio + image assets into a full Remotion composition",
+    pendingLabel: "Generating video…",
+    doneLabel: "Video generated",
+    detail: () => "Compiling audio + image assets into a full video composition",
   },
   save_video_code: {
     icon: <Save className="size-3" />,
