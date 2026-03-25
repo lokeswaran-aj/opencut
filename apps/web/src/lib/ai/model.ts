@@ -9,15 +9,20 @@
  *   AI_GENERATION_MODEL      Override the generation model ID
  *   AI_EDIT_MODEL            Override the lightweight edit model ID
  *
- *   Credentials — choose one of:
- *     Option A — Service account JSON file (local dev):
- *       GOOGLE_APPLICATION_CREDENTIALS  absolute path to the .json file
+ *   Credentials — choose one of (checked in order):
  *
- *     Option B — Individual fields (deployment / Vercel):
+ *     Option A — Full service account JSON, base64-encoded (recommended for Coolify/Docker):
+ *       GOOGLE_SERVICE_ACCOUNT_JSON  base64 of the entire service-account .json file
+ *       Generate with: cat service-account-key.json | base64 | tr -d '\n'
+ *
+ *     Option B — Individual fields:
  *       GOOGLE_CLIENT_EMAIL    client_email from the service account JSON
  *       GOOGLE_PRIVATE_KEY     private_key from the service account JSON
  *                              (newlines can be either literal \n or \\n)
  *       GOOGLE_PRIVATE_KEY_ID  private_key_id (optional)
+ *
+ *     Option C — Service account JSON file (local dev):
+ *       GOOGLE_APPLICATION_CREDENTIALS  absolute path to the .json file
  */
 
 import { createVertex } from "@ai-sdk/google-vertex";
@@ -38,6 +43,21 @@ function getVertexProvider() {
     throw new Error("[model] GOOGLE_VERTEX_PROJECT is required");
   }
 
+  // Option A: full service account JSON base64-encoded — most reliable for
+  // container deployments because it avoids all newline/escaping issues with
+  // the private key field.
+  const serviceAccountB64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (serviceAccountB64) {
+    const json = JSON.parse(Buffer.from(serviceAccountB64, "base64").toString("utf-8"));
+    _vertexProvider = createVertex({
+      project,
+      location,
+      googleAuthOptions: { credentials: json },
+    });
+    return _vertexProvider;
+  }
+
+  // Option B: individual credential fields
   const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
   const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
   const privateKeyId = process.env.GOOGLE_PRIVATE_KEY_ID;
