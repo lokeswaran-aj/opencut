@@ -14,13 +14,13 @@ export default function HomePage() {
         </div>
       </nav>
 
-      <main className="flex-1 flex flex-col items-center justify-center px-6 gap-8 py-20">
-        <div className="text-center space-y-4">
+      <main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 gap-6 sm:gap-8 py-12 sm:py-20">
+        <div className="text-center space-y-4 w-full">
           <div className="inline-flex items-center gap-2 text-xs text-muted-foreground border border-border rounded-full px-3 py-1">
             <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
             Built for ElevenLabs × Firecrawl Hackathon
           </div>
-          <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight whitespace-nowrap">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight">
             What do you want to create today?
           </h1>
         </div>

@@ -182,13 +182,13 @@ export function VideoPreviewPanel({
 
   return (
     <div className="flex w-full h-full flex-col overflow-hidden bg-neutral-925">
-      <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-3">
-        <p className="text-xs font-medium text-neutral-400 uppercase tracking-wider">
+      <div className="flex items-center justify-between border-b border-neutral-800 px-3 sm:px-5 py-3 gap-2">
+        <p className="text-xs font-medium text-neutral-400 uppercase tracking-wider shrink-0">
           Preview
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
           {config && (
-            <span className="text-xs text-neutral-500">
+            <span className="hidden sm:inline text-xs text-neutral-500 shrink-0">
               {aspectRatio} · {config.fps ?? 30}fps
             </span>
           )}
@@ -199,7 +199,7 @@ export function VideoPreviewPanel({
               href={exportState.outputUrl}
               download={`opencut-${projectId}.mp4`}
               onClick={() => toast.success("Download started", { description: "opencut-video.mp4" })}
-              className="inline-flex items-center gap-1.5 h-7 px-3 text-xs rounded-md font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+              className="inline-flex items-center gap-1.5 h-7 px-3 text-xs rounded-md font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors shrink-0"
             >
               <Download className="size-3" />
               Download
@@ -208,32 +208,32 @@ export function VideoPreviewPanel({
             <Button
               size="sm"
               onClick={() => setExportState({ type: "idle" })}
-              className="h-7 px-3 text-xs bg-red-600 hover:bg-red-500 text-white"
+              className="h-7 px-3 text-xs bg-red-600 hover:bg-red-500 text-white shrink-0"
               title={exportState.message}
             >
               <XCircle className="size-3 mr-1" />
               Retry
             </Button>
           ) : isRendering ? (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               {progress > 0 && (
-                <div className="flex items-center gap-1.5 text-xs text-neutral-400">
-                  <div className="w-16 h-1 rounded-full bg-neutral-700 overflow-hidden">
+                <div className="flex items-center gap-1 sm:gap-1.5 text-xs text-neutral-400">
+                  <div className="w-12 sm:w-16 h-1 rounded-full bg-neutral-700 overflow-hidden shrink-0">
                     <div
                       className="h-full rounded-full bg-indigo-500 transition-all duration-500"
                       style={{ width: `${progress}%` }}
                     />
                   </div>
-                  <span>{progress}%</span>
+                  <span className="hidden sm:inline">{progress}%</span>
                 </div>
               )}
               <Button
                 size="sm"
                 disabled
-                className="h-7 px-3 text-xs bg-indigo-600 text-white opacity-80 cursor-not-allowed"
+                className="h-7 px-2 sm:px-3 text-xs bg-indigo-600 text-white opacity-80 cursor-not-allowed shrink-0"
               >
                 <Loader2 className="size-3 mr-1 animate-spin" />
-                {stage ?? "Rendering…"}
+                <span className="hidden xs:inline">{stage ?? "Rendering…"}</span>
               </Button>
             </div>
           ) : (
@@ -241,7 +241,7 @@ export function VideoPreviewPanel({
               size="sm"
               disabled={!config || isGenerating}
               onClick={handleExport}
-              className="h-7 px-3 text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40"
+              className="h-7 px-3 text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40 shrink-0"
             >
               Export
             </Button>

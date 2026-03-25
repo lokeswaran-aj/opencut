@@ -114,23 +114,24 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white">
-      <header className="border-b border-neutral-800 px-6 py-4">
-        <div className="mx-auto max-w-5xl flex items-center justify-between">
-          <Link href="/" className="text-lg font-bold tracking-tight hover:opacity-80 transition-opacity">opencut</Link>
-          <div className="flex items-center gap-3">
+      <header className="border-b border-neutral-800 px-4 sm:px-6 py-4">
+        <div className="mx-auto max-w-5xl flex items-center justify-between gap-3">
+          <Link href="/" className="text-lg font-bold tracking-tight hover:opacity-80 transition-opacity shrink-0">opencut</Link>
+          <div className="flex items-center gap-2 sm:gap-3">
             <Button
               onClick={() => setShowNew(true)}
               className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm"
             >
-              + New Video
+              <span className="hidden sm:inline">+ New Video</span>
+              <span className="sm:hidden">+ New</span>
             </Button>
             <UserButton />
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-10">
-        <h1 className="text-2xl font-semibold mb-8">Your Videos</h1>
+      <main className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-10">
+        <h1 className="text-xl sm:text-2xl font-semibold mb-6 sm:mb-8">Your Videos</h1>
 
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
