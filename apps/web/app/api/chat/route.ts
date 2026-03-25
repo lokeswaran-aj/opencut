@@ -86,15 +86,8 @@ export async function POST(req: Request) {
     tools: makeTools(projectId),
     // research + plan + (image + audio) × 8 scenes + style + save = ~20 steps max
     stopWhen: stepCountIs(25),
-    onStepStart: ({ stepType, toolCalls }) => {
-      if (stepType === "tool-result" && toolCalls?.length) {
-        for (const tc of toolCalls) {
-          log("tool:start", tc.toolName, { projectId, toolCallId: tc.toolCallId })
-        }
-      }
-    },
-    onStepFinish: ({ stepType, toolResults, usage }) => {
-      if (stepType === "tool-result" && toolResults?.length) {
+    onStepFinish: ({ toolResults, usage }) => {
+      if (toolResults?.length) {
         for (const tr of toolResults) {
           log("tool:done", tr.toolName, {
             projectId,
