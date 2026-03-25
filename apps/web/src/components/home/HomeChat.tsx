@@ -22,7 +22,7 @@ const EXAMPLES = [
   {
     label: "Google Stitch launch",
     prompt:
-      "Generate a product launch video about Google Stitch by Google Labs. Style: Apple/Google I/O keynote aesthetic — pure black background, slow elegant transitions, Google brand colors (Blue #4285F4, Red #EA4335, Green #34A853), clean sans-serif typography, subtle particle effects, cinematic pacing. Prestigious and polished, not hype-y. 16:9 widescreen.",
+      "Generate a product launch video about Google Stitch by Google Labs. Style: Google I/O keynote aesthetic — pure white background, slow elegant transitions, Google brand colors (Blue #4285F4, Red #EA4335, Green #34A853), clean sans-serif typography, subtle particle effects, cinematic pacing. Prestige and polish, not hype-y. Ensure all text and visual elements remain highly visible and aesthetically pleasing on a white background. 16:9 widescreen.",
   },
   {
     label: "Israel-Iran war",
