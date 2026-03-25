@@ -1,9 +1,11 @@
-import { neon } from "@neondatabase/serverless"
-import { drizzle } from "drizzle-orm/neon-http"
-import * as schema from "./schema"
+import { neon } from "@neondatabase/serverless";
+import { drizzle as neonDrizzle } from "drizzle-orm/neon-http";
+import postgres from "postgres";
+import { drizzle as pgDrizzle } from "drizzle-orm/postgres-js";
+import * as schema from "./schema";
 
-// Uses Neon's HTTP transport — no TCP connection pool needed.
-// This is safe for Vercel serverless where each invocation is short-lived.
-const sql = neon(process.env.DATABASE_URL!)
+const url = process.env.DATABASE_URL!;
 
-export const db = drizzle(sql, { schema, casing: "snake_case" })
+export const db = url.includes("neon.tech")
+  ? neonDrizzle(neon(url), { schema, casing: "snake_case" })
+  : pgDrizzle(postgres(url), { schema, casing: "snake_case" });
