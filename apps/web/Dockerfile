@@ -23,11 +23,20 @@ RUN pnpm install --frozen-lockfile
 FROM base AS builder
 WORKDIR /app
 
-COPY --from=deps /app/node_modules  ./node_modules
-COPY --from=deps /app/packages      ./packages
+# pnpm workspaces keep the virtual store at root node_modules/.pnpm AND
+# per-package symlinks at apps/web/node_modules — both are required.
+COPY --from=deps /app/node_modules              ./node_modules
+COPY --from=deps /app/apps/web/node_modules     ./apps/web/node_modules
+COPY --from=deps /app/packages                  ./packages
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# db/index.ts reads DATABASE_URL at module-evaluation time (top-level code).
+# Provide a placeholder so the build doesn't crash — this value is never
+# baked into the runner image; the real URL is injected at runtime by Coolify.
+ARG DATABASE_URL=postgresql://localhost:5432/placeholder
+ENV DATABASE_URL=${DATABASE_URL}
 
 RUN pnpm --filter web build
 
